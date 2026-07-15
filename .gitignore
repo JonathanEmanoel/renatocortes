@@ -1,0 +1,23 @@
+# Dependências
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build
+dist/
+build/
+
+# Variáveis de ambiente
+.env
+.env.local
+.env.*
+
+# Logs
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db

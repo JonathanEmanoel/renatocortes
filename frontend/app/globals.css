@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background: #030303;
+  color: #f7f7f7;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(239, 31, 40, 0.45);
+}
+
+.barber-texture {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.92)),
+    radial-gradient(circle at 18% 32%, rgba(141, 86, 42, 0.34), transparent 22%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.12), transparent 18%),
+    linear-gradient(135deg, #020202 0%, #16100c 48%, #050505 100%);
+}
+
+.auth-chair {
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.85)),
+    radial-gradient(circle at 20% 45%, rgba(121, 73, 36, 0.6), transparent 22%),
+    linear-gradient(155deg, #050505 0%, #17110d 46%, #020202 100%);
+}
+
+.panel-glass {
+  background: linear-gradient(145deg, rgba(18, 18, 18, 0.9), rgba(5, 5, 5, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
