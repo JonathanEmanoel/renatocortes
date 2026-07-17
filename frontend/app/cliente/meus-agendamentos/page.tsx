@@ -1,59 +1,53 @@
-"use client";
+import { redirect } from "next/navigation";
+import { formatDatePtBr, formatTimePtBr } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
+import { getAuthenticatedClient } from "@/lib/server/auth";
+import { AppointmentsContent } from "./appointments-content";
+import type { Appointment } from "@/types/client-area";
 
-import { useState } from "react";
-import { AppointmentCard } from "@/components/client/appointment-card";
-import { ClientShell } from "@/components/client/client-shell";
-import { SectionTitle } from "@/components/client/section-title";
-import { Button } from "@/components/ui/button";
-import { appointments } from "@/utils/client-mocks";
-import { cn } from "@/utils/cn";
+const statusLabel: Record<string, Appointment["status"]> = {
+  PENDING: "Pendente",
+  CONFIRMED: "Confirmado",
+  COMPLETED: "Concluido",
+  CANCELED: "Cancelado",
+  NO_SHOW: "Cancelado"
+};
 
-export default function MyAppointmentsPage() {
-  const [tab, setTab] = useState<"upcoming" | "history">("upcoming");
-  const visible =
-    tab === "upcoming"
-      ? appointments.filter((appointment) => appointment.status === "Confirmado")
-      : appointments.filter((appointment) => appointment.status !== "Confirmado");
+export default async function MyAppointmentsPage() {
+  const session = await getAuthenticatedClient();
 
-  return (
-    <ClientShell>
-      <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Agenda</p>
-      <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Meus Agendamentos</h1>
+  if (!session) {
+    redirect("/login");
+  }
 
-      <div className="mt-8 grid grid-cols-2 gap-3 rounded-[8px] border border-white/14 bg-card p-2">
-        <TabButton active={tab === "upcoming"} onClick={() => setTab("upcoming")}>Próximos</TabButton>
-        <TabButton active={tab === "history"} onClick={() => setTab("history")}>Histórico</TabButton>
-      </div>
+  const records = await prisma.appointment.findMany({
+    where: {
+      clientId: session.client.id,
+      deletedAt: null
+    },
+    include: {
+      barber: { include: { user: true } },
+      service: true
+    },
+    orderBy: [{ dataHora: "asc" }]
+  });
 
-      <section className="mt-9">
-        <SectionTitle title={tab === "upcoming" ? "Próximos" : "Histórico"} />
-        <div className="grid gap-5 md:grid-cols-2">
-          {visible.map((appointment) => (
-            <div key={appointment.id}>
-              <AppointmentCard appointment={appointment} />
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="outline" className="h-11 px-2 text-xs">Cancelar</Button>
-                <Button className="h-11 px-2 text-xs">Reagendar</Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    </ClientShell>
-  );
-}
+  const now = new Date();
+  const appointments = records
+    .map((appointment) => ({
+      id: appointment.id,
+      date: formatDatePtBr(appointment.dataHora),
+      time: formatTimePtBr(appointment.dataHora),
+      barber: appointment.barber.user.name,
+      service: appointment.service.name,
+      status: statusLabel[appointment.status] ?? "Pendente",
+      observations: appointment.observacoes ?? undefined,
+      isUpcoming: appointment.dataHora >= now && ["PENDING", "CONFIRMED"].includes(appointment.status),
+      duration: `${appointment.service.duration} min`,
+      serviceId: appointment.serviceId,
+      barberId: appointment.barberId
+    }))
+    .sort((a, b) => Number(b.isUpcoming) - Number(a.isUpcoming));
 
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "rounded-[8px] px-4 py-3 text-sm font-black uppercase transition",
-        active ? "bg-primary text-white" : "text-white/60 hover:text-white"
-      )}
-    >
-      {children}
-    </button>
-  );
+  return <AppointmentsContent appointments={appointments} />;
 }

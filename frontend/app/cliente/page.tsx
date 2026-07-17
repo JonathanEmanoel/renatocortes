@@ -6,16 +6,81 @@ import { ProductCard } from "@/components/client/product-card";
 import { QuickActionCard } from "@/components/client/quick-action-card";
 import { SectionTitle } from "@/components/client/section-title";
 import { Button } from "@/components/ui/button";
-import { appointments, mockClient, products, quickActions } from "@/utils/client-mocks";
+import { formatCurrency, formatDatePtBr, formatTimePtBr } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
+import { getAuthenticatedClient } from "@/lib/server/auth";
+import { quickActions } from "@/utils/client-mocks";
+import type { Appointment, Product, ProductCategory } from "@/types/client-area";
 
-export default function ClientDashboardPage() {
-  const nextAppointment = appointments.find((appointment) => appointment.status === "Confirmado");
+const statusLabel: Record<string, Appointment["status"]> = {
+  PENDING: "Pendente",
+  CONFIRMED: "Confirmado",
+  COMPLETED: "Concluido",
+  CANCELED: "Cancelado"
+};
+
+function mapCategory(name: string): ProductCategory {
+  if (name === "Pomadas") return "Pomadas";
+  if (name === "Shampoos") return "Shampoo";
+  if (name === "Acessórios" || name === "Acessorios") return "Acessorios";
+  return "Todos";
+}
+
+export default async function ClientDashboardPage() {
+  const session = await getAuthenticatedClient();
+  const [nextAppointmentRecord, productRecords] = await Promise.all([
+    session
+      ? prisma.appointment.findFirst({
+          where: {
+            clientId: session.client.id,
+            dataHora: { gte: new Date() },
+            deletedAt: null,
+            status: { in: ["PENDING", "CONFIRMED"] }
+          },
+          include: {
+            barber: { include: { user: true } },
+            service: true
+          },
+          orderBy: { dataHora: "asc" }
+        })
+      : null,
+    prisma.product.findMany({
+      where: { active: true, deletedAt: null },
+      include: { category: true },
+      orderBy: { createdAt: "desc" },
+      take: 4
+    })
+  ]);
+
+  const nextAppointment: Appointment | null = nextAppointmentRecord
+    ? {
+        id: nextAppointmentRecord.id,
+        date: formatDatePtBr(nextAppointmentRecord.dataHora),
+        time: formatTimePtBr(nextAppointmentRecord.dataHora),
+        barber: nextAppointmentRecord.barber.user.name,
+        service: nextAppointmentRecord.service.name,
+        status: statusLabel[nextAppointmentRecord.status] ?? "Pendente",
+        observations: nextAppointmentRecord.observacoes ?? undefined,
+        duration: `${nextAppointmentRecord.service.duration} min`
+      }
+    : null;
+
+  const products: Product[] = productRecords.map((product) => ({
+    id: product.id,
+    name: product.name,
+    price: formatCurrency(Number(product.price)),
+    description: product.description ?? "Produto Renato Cortes Barbearia.",
+    category: mapCategory(product.category.name),
+    stock: product.stock
+  }));
+
+  const clientName = session?.user.name?.trim();
 
   return (
     <ClientShell>
       <section>
         <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Área do Cliente</p>
-        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Olá, {mockClient.name}!</h1>
+        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">{clientName ? `Olá, ${clientName}!` : "Olá!"}</h1>
         <p className="mt-3 text-lg text-white/68">Pronto para renovar seu estilo?</p>
       </section>
 
@@ -65,7 +130,7 @@ export default function ClientDashboardPage() {
           }
         />
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {products.slice(0, 4).map((product) => (
+          {products.map((product) => (
             <ProductCard key={product.id} product={product} compact />
           ))}
         </div>
@@ -76,7 +141,7 @@ export default function ClientDashboardPage() {
           <ShoppingBag className="h-8 w-8 text-primary" />
           <div>
             <h2 className="font-black uppercase">Loja pronta para integração</h2>
-            <p className="mt-1 text-sm text-white/58">Produtos e carrinho seguem mockados nesta etapa.</p>
+            <p className="mt-1 text-sm text-white/58">Produtos e pedidos conectados ao banco.</p>
           </div>
         </div>
       </section>

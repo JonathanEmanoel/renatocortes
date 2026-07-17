@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, EyeOff, Lock, Mail, Phone, User } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail, Phone, User } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -10,6 +11,7 @@ import { AuthLayout } from "@/components/layout/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { createClient } from "@/utils/supabase/client";
 
 const registerSchema = z
   .object({
@@ -27,7 +29,11 @@ const registerSchema = z
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [accepted, setAccepted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const {
     register,
     handleSubmit,
@@ -36,8 +42,58 @@ export default function RegisterPage() {
     resolver: zodResolver(registerSchema)
   });
 
-  async function onSubmit() {
-    await new Promise((resolve) => setTimeout(resolve, 350));
+  async function onSubmit(data: RegisterFormData) {
+    setFormError(null);
+    const supabase = createClient();
+
+    const { data: authData, error } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: {
+        data: {
+          name: data.name,
+          phone: data.phone
+        }
+      }
+    });
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (message.includes("already registered") || message.includes("already exists")) {
+        setFormError("Este e-mail já está cadastrado. Faça login para continuar.");
+        return;
+      }
+      setFormError("Não foi possível criar sua conta agora. Verifique os dados e tente novamente.");
+      return;
+    }
+
+    if (!authData.user) {
+      setFormError("Não foi possível criar sua conta agora. Tente novamente.");
+      return;
+    }
+
+    if (!authData.session) {
+      router.push("/login");
+      return;
+    }
+
+    const response = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: data.name,
+        phone: data.phone
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      await supabase.auth.signOut();
+      setFormError(payload?.message ?? "Sua conta foi criada, mas não conseguimos configurar seu perfil.");
+      return;
+    }
+
+    router.push("/cliente");
   }
 
   return (
@@ -74,8 +130,12 @@ export default function RegisterPage() {
             <span className="font-bold">Senha</span>
             <Input
               icon={<Lock className="h-5 w-5" />}
-              trailing={<EyeOff className="h-5 w-5" />}
-              type="password"
+              trailing={
+                <button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar senha">
+                  {showPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                </button>
+              }
+              type={showPassword ? "text" : "password"}
               placeholder="Digite sua senha"
               {...register("password")}
             />
@@ -86,8 +146,16 @@ export default function RegisterPage() {
             <span className="font-bold">Confirmar senha</span>
             <Input
               icon={<Lock className="h-5 w-5" />}
-              trailing={<EyeOff className="h-5 w-5" />}
-              type="password"
+              trailing={
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((current) => !current)}
+                  aria-label="Mostrar confirmacao de senha"
+                >
+                  {showConfirmPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                </button>
+              }
+              type={showConfirmPassword ? "text" : "password"}
               placeholder="Confirme sua senha"
               {...register("confirmPassword")}
             />
@@ -110,6 +178,8 @@ export default function RegisterPage() {
             </a>
           </p>
         </div>
+
+        {formError ? <p className="mt-6 rounded-[8px] border border-primary/50 p-4 text-primary">{formError}</p> : null}
 
         <Button type="submit" size="lg" className="mt-9 w-full" disabled={!accepted || isSubmitting}>
           {isSubmitting ? "Criando..." : "Criar conta"}

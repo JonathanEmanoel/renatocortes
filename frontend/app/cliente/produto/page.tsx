@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
-import { products } from "@/utils/client-mocks";
+import { prisma } from "@/lib/prisma";
 
-export default function ProductIndexPage() {
-  redirect(`/cliente/produto/${products[0].id}`);
+export default async function ProductIndexPage() {
+  const product = await prisma.product.findFirst({
+    where: { active: true, deletedAt: null },
+    orderBy: { createdAt: "desc" }
+  });
+
+  redirect(product ? `/cliente/produto/${product.id}` : "/cliente/loja");
 }

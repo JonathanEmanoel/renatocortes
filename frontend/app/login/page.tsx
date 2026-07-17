@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, EyeOff, Lock, Mail } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { AuthLayout } from "@/components/layout/auth-layout";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
+import { createClient } from "@/utils/supabase/client";
 
 const loginSchema = z.object({
   email: z.string().email("Informe um e-mail válido."),
@@ -26,6 +27,7 @@ export default function LoginPage() {
   const { login, isLoading } = useAuthStore();
   const [formError, setFormError] = useState<string | null>(null);
   const [remember, setRemember] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     register,
@@ -39,6 +41,15 @@ export default function LoginPage() {
       remember: false
     }
   });
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        router.replace("/cliente");
+      }
+    });
+  }, [router]);
 
   async function onSubmit(data: LoginFormData) {
     setFormError(null);
@@ -73,8 +84,12 @@ export default function LoginPage() {
             <span className="font-bold">Senha</span>
             <Input
               icon={<Lock className="h-5 w-5" />}
-              trailing={<EyeOff className="h-5 w-5" />}
-              type="password"
+              trailing={
+                <button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar senha">
+                  {showPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                </button>
+              }
+              type={showPassword ? "text" : "password"}
               placeholder="Digite sua senha"
               {...register("password")}
             />

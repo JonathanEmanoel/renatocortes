@@ -14,6 +14,7 @@ export type Product = {
   price: string;
   description: string;
   category: ProductCategory;
+  stock?: number;
 };
 
 export type Service = {
@@ -37,7 +38,9 @@ export type Appointment = {
   time: string;
   barber: string;
   service: string;
-  status: "Confirmado" | "Concluido" | "Cancelado";
+  status: "Pendente" | "Confirmado" | "Concluido" | "Cancelado";
+  observations?: string;
+  duration?: string;
 };
 
 export type SubscriptionPlan = {
@@ -45,5 +48,7 @@ export type SubscriptionPlan = {
   name: string;
   price: string;
   benefits: string[];
+  description?: string;
+  periodicity?: string;
   featured?: boolean;
 };

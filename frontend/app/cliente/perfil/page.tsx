@@ -1,72 +1,80 @@
-import Link from "next/link";
-import { CalendarDays, KeyRound, LogOut, Mail, Phone, Star, UserRound } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { ClientShell } from "@/components/client/client-shell";
-import { SectionTitle } from "@/components/client/section-title";
-import { Avatar } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { mockClient } from "@/utils/client-mocks";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { createClient } from "@/utils/supabase/server";
+import { ProfileContent } from "./profile-content";
 
-const accountLinks = [
-  { href: "/cliente/meus-agendamentos", label: "Meus Agendamentos", icon: CalendarDays },
-  { href: "/cliente/assinaturas", label: "Minhas Assinaturas", icon: Star },
-  { href: "/", label: "Sair", icon: LogOut }
-];
+const notInformed = "Não informado";
 
-export default function ProfilePage() {
-  return (
-    <ClientShell>
-      <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Perfil</p>
-      <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Meu Perfil</h1>
-
-      <section className="mt-9 rounded-[8px] border border-white/14 bg-card p-6 text-center">
-        <Avatar name={mockClient.name} className="mx-auto h-24 w-24" />
-        <h2 className="mt-5 text-2xl font-black uppercase">{mockClient.name}</h2>
-        <div className="mt-6 grid gap-3 text-left md:grid-cols-2">
-          <Info icon={Phone} label="Telefone" value={mockClient.phone} />
-          <Info icon={Mail} label="Email" value={mockClient.email} />
-        </div>
-        <div className="mt-7 grid gap-3 md:grid-cols-2">
-          <Button>
-            <UserRound className="h-5 w-5" />
-            Editar Dados
-          </Button>
-          <Button variant="outline">
-            <KeyRound className="h-5 w-5" />
-            Alterar Senha
-          </Button>
-        </div>
-      </section>
-
-      <section className="mt-10">
-        <SectionTitle title="Minha Conta" />
-        <div className="grid gap-3">
-          {accountLinks.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="flex items-center justify-between rounded-[8px] border border-white/14 bg-card p-5 font-black uppercase transition hover:border-primary/50 hover:text-primary"
-            >
-              <span className="flex items-center gap-4">
-                <item.icon className="h-5 w-5 text-primary" />
-                {item.label}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
-    </ClientShell>
-  );
+function parseClientNotes(notes: string | null) {
+  try {
+    const parsed = notes ? JSON.parse(notes) : {};
+    return {
+      cpf: typeof parsed.cpf === "string" && parsed.cpf ? parsed.cpf : notInformed,
+      birthDate: typeof parsed.birthDate === "string" && parsed.birthDate ? parsed.birthDate : notInformed
+    };
+  } catch {
+    return {
+      cpf: notInformed,
+      birthDate: notInformed
+    };
+  }
 }
 
-function Info({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
+export default async function ProfilePage() {
+  const cookieStore = await cookies();
+  const supabase = createClient(cookieStore);
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user?.id) {
+    redirect("/login");
+  }
+
+  const profile = await prisma.user
+    .findFirst({
+      where: {
+        authId: user.id,
+        deletedAt: null
+      },
+      include: {
+        client: true,
+        addresses: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: "desc" },
+          take: 1
+        }
+      }
+    })
+    .catch(() => null);
+
+  const address = profile?.addresses[0] ?? null;
+  const formattedAddress = address
+    ? `${address.street}, ${address.number}${address.complement ? ` - ${address.complement}` : ""}, ${address.city} - ${address.state}, ${address.zipCode}`
+    : notInformed;
+  const notes = parseClientNotes(profile?.client?.notes ?? null);
+
   return (
-    <div className="rounded-[8px] border border-white/10 bg-black/35 p-4">
-      <p className="flex items-center gap-3 text-sm uppercase tracking-[0.08em] text-white/50">
-        <Icon className="h-4 w-4 text-primary" />
-        {label}
-      </p>
-      <p className="mt-2 font-bold">{value}</p>
-    </div>
+    <ProfileContent
+      initialProfile={{
+        name: profile?.name ?? notInformed,
+        email: profile?.email ?? user.email ?? notInformed,
+        phone: profile?.phone ?? notInformed,
+        cpf: notes.cpf,
+        birthDate: notes.birthDate,
+        createdAt: profile?.createdAt ? profile.createdAt.toLocaleDateString("pt-BR") : notInformed,
+        address: formattedAddress,
+        addressFields: {
+          street: address?.street ?? "",
+          number: address?.number ?? "",
+          complement: address?.complement ?? "",
+          neighborhood: address?.neighborhood ?? "",
+          city: address?.city ?? "",
+          state: address?.state ?? "",
+          zipCode: address?.zipCode ?? ""
+        }
+      }}
+    />
   );
 }

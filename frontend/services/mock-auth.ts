@@ -1,23 +1,19 @@
 import type { AuthUser, LoginCredentials } from "@/types/auth";
 
-const companyId = "renato-cortes-company";
-
 const mockUsers: Array<AuthUser & { password: string }> = [
   {
     id: "client-user",
     name: "Cliente Renato Cortes",
     email: "cliente@email.com",
     password: "123456",
-    role: "CLIENT",
-    companyId
+    role: "CLIENT"
   },
   {
     id: "employee-user",
     name: "Renan Cortes",
     email: "renan@barbearia.com",
     password: "123456",
-    role: "EMPLOYEE",
-    companyId
+    role: "EMPLOYEE"
   }
 ];
 
