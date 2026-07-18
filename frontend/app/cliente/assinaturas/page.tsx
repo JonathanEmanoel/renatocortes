@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { SubscriptionsContent } from "./subscriptions-content";
