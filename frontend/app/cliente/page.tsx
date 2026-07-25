@@ -1,3 +1,6 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 import Link from "next/link";
 import { Crown, ShoppingBag } from "lucide-react";
 import { AppointmentCard } from "@/components/client/appointment-card";

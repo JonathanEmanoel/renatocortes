@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { SubscriptionsContent } from "./subscriptions-content";
