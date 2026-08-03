@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Minus, Plus, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { addStoredCartItem } from "@/lib/cart";
+import { useCartStore } from "@/store/cart-store";
 
 type ProductDetailActionsProps = {
   product: {
@@ -20,17 +22,20 @@ export function ProductDetailActions({ product }: ProductDetailActionsProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const isOutOfStock = product.stock <= 0;
 
+  const addItem = useCartStore((state) => state.addItem);
+
   function addToCart() {
     if (isOutOfStock) {
       setFeedback("Produto indisponível no momento.");
       return;
     }
 
-    addStoredCartItem({
+    addItem({
       ...product,
       quantity
     });
     setFeedback("Produto adicionado ao carrinho.");
+    window.setTimeout(() => setFeedback(null), 3200);
   }
 
   return (
@@ -58,7 +63,17 @@ export function ProductDetailActions({ product }: ProductDetailActionsProps) {
           <Plus className="h-5 w-5" />
         </Button>
       </div>
-      {feedback ? <p className="mt-5 rounded-[8px] border border-primary/50 p-4 text-primary">{feedback}</p> : null}
+      {feedback ? (
+        <div className="mt-5 flex flex-col gap-3 rounded-[12px] border border-primary/40 bg-black/70 p-4 shadow-panel sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Carrinho</p>
+            <p className="mt-1 font-semibold text-white">{feedback}</p>
+          </div>
+          <Link href="/cliente/carrinho" className="text-sm font-black uppercase text-primary underline underline-offset-4">
+            Ver carrinho
+          </Link>
+        </div>
+      ) : null}
       <Button className="mt-8 w-full" disabled={isOutOfStock} onClick={addToCart}>
         <ShoppingBag className="h-5 w-5" />
         {isOutOfStock ? "Esgotado" : "Adicionar ao Carrinho"}

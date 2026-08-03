@@ -15,20 +15,20 @@ export function BarberCard({ barber, selected, onClick }: BarberCardProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-4 rounded-[8px] border bg-card p-4 text-left transition hover:border-primary/50",
-        selected ? "border-primary" : "border-white/14"
+        "flex w-full items-center gap-4 rounded-[12px] border bg-card p-4 text-left shadow-[0_16px_44px_rgba(0,0,0,0.24)] transition hover:border-primary/60 hover:bg-white/[0.055]",
+        selected ? "border-primary bg-primary/10 shadow-red" : "border-primary/18"
       )}
     >
       <Avatar name={barber.name} className="h-14 w-14" />
       <div className="min-w-0 flex-1">
         <h3 className="font-black uppercase">{barber.name}</h3>
         <p className="mt-1 text-sm text-white/58">{barber.specialty}</p>
-        <p className="mt-2 flex items-center gap-2 text-sm text-primary">
+        <p className="mt-2 flex items-center gap-2 text-sm font-bold text-primary">
           <Star className="h-4 w-4 fill-primary" />
           {barber.rating}
         </p>
       </div>
-      <User className="h-5 w-5 text-white/30" />
+      <User className="h-5 w-5 text-primary/55" />
     </button>
   );
 }

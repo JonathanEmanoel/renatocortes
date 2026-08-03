@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CalendarDays, KeyRound, LogOut, Mail, Phone, Star, UserRound, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ClientShell } from "@/components/client/client-shell";
@@ -9,6 +10,7 @@ import { SectionTitle } from "@/components/client/section-title";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuthStore } from "@/store/auth-store";
 
 type AddressFields = {
   street: string;
@@ -31,14 +33,30 @@ export type ProfileData = {
   addressFields: AddressFields;
 };
 
-const accountLinks = [
-  { href: "/cliente/meus-agendamentos", label: "Meus Agendamentos", icon: CalendarDays },
-  { href: "/cliente/assinaturas", label: "Minhas Assinaturas", icon: Star },
-  { href: "/", label: "Sair", icon: LogOut }
-];
+type AccountLink = {
+  href?: string;
+  label: string;
+  icon: LucideIcon;
+  onClick?: () => Promise<void>;
+};
 
 export function ProfileContent({ initialProfile }: { initialProfile: ProfileData }) {
   const [profile, setProfile] = useState(initialProfile);
+  const router = useRouter();
+  const logout = useAuthStore((state) => state.logout);
+
+  const accountLinks: AccountLink[] = [
+    { href: "/cliente/meus-agendamentos", label: "Meus Agendamentos", icon: CalendarDays },
+    { href: "/cliente/assinaturas", label: "Minhas Assinaturas", icon: Star },
+    {
+      label: "Sair",
+      icon: LogOut,
+      onClick: async () => {
+        await logout();
+        router.push("/");
+      }
+    }
+  ];
   const [form, setForm] = useState(initialProfile);
   const [isOpen, setIsOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -130,18 +148,33 @@ export function ProfileContent({ initialProfile }: { initialProfile: ProfileData
       <section className="mt-10">
         <SectionTitle title="Minha Conta" />
         <div className="grid gap-3">
-          {accountLinks.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className="flex items-center justify-between rounded-[8px] border border-white/14 bg-card p-5 font-black uppercase transition hover:border-primary/50 hover:text-primary"
-            >
+          {accountLinks.map((item) => {
+            const content = (
               <span className="flex items-center gap-4">
                 <item.icon className="h-5 w-5 text-primary" />
                 {item.label}
               </span>
-            </Link>
-          ))}
+            );
+
+            return item.onClick ? (
+              <button
+                key={item.label}
+                type="button"
+                onClick={item.onClick}
+                className="flex items-center justify-between rounded-[8px] border border-white/14 bg-card p-5 font-black uppercase transition hover:border-primary/50 hover:text-primary"
+              >
+                {content}
+              </button>
+            ) : (
+              <Link
+                key={item.label}
+                href={item.href!}
+                className="flex items-center justify-between rounded-[8px] border border-white/14 bg-card p-5 font-black uppercase transition hover:border-primary/50 hover:text-primary"
+              >
+                {content}
+              </Link>
+            );
+          })}
         </div>
       </section>
 

@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Plus, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { addStoredCartItem } from "@/lib/cart";
+import { useCartStore } from "@/store/cart-store";
 import type { Product } from "@/types/client-area";
 
 type ProductCardProps = {
@@ -12,12 +13,15 @@ type ProductCardProps = {
 };
 
 export function ProductCard({ product, compact = false }: ProductCardProps) {
+  const addItem = useCartStore((state) => state.addItem);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
   function addToCart() {
     const priceValue = Number(product.price.replace(/[^\d,]/g, "").replace(",", "."));
     const stock = product.stock ?? 99;
     if (stock <= 0) return;
 
-    addStoredCartItem({
+    addItem({
       id: product.id,
       name: product.name,
       price: product.price,
@@ -25,6 +29,8 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
       stock,
       quantity: 1
     });
+    setFeedback("Produto adicionado ao carrinho.");
+    window.setTimeout(() => setFeedback(null), 2800);
   }
 
   return (
@@ -45,6 +51,12 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
           </Button>
         </div>
         <p className="mt-5 text-xl font-black text-primary">{product.price}</p>
+        {feedback ? (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-[10px] border border-primary/35 bg-black/70 p-3 text-sm shadow-panel">
+            <span className="font-black uppercase tracking-[0.12em] text-primary">Carrinho</span>
+            <span className="font-semibold text-white">{feedback}</span>
+          </div>
+        ) : null}
       </div>
     </article>
   );

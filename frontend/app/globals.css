@@ -16,8 +16,8 @@ html {
 
 body {
   min-height: 100vh;
-  background: #030303;
-  color: #f7f7f7;
+  background: #0f0f0f;
+  color: #f8f5ea;
 }
 
 button,
@@ -26,26 +26,30 @@ input {
 }
 
 ::selection {
-  background: rgba(239, 31, 40, 0.45);
+  background: rgba(212, 175, 55, 0.42);
 }
 
 .barber-texture {
   background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.92)),
-    radial-gradient(circle at 18% 32%, rgba(141, 86, 42, 0.34), transparent 22%),
-    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.12), transparent 18%),
-    linear-gradient(135deg, #020202 0%, #16100c 48%, #050505 100%);
+    linear-gradient(90deg, rgba(0, 0, 0, 0.94), rgba(15, 15, 15, 0.74), rgba(0, 0, 0, 0.94)),
+    radial-gradient(circle at 16% 22%, rgba(212, 175, 55, 0.18), transparent 22%),
+    radial-gradient(circle at 82% 18%, rgba(239, 31, 40, 0.09), transparent 18%),
+    radial-gradient(circle at 78% 76%, rgba(28, 100, 200, 0.08), transparent 22%),
+    linear-gradient(135deg, #030303 0%, #0f0f0f 52%, #050505 100%);
 }
 
 .auth-chair {
   background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.85)),
-    radial-gradient(circle at 20% 45%, rgba(121, 73, 36, 0.6), transparent 22%),
-    linear-gradient(155deg, #050505 0%, #17110d 46%, #020202 100%);
+    linear-gradient(90deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.88)),
+    radial-gradient(circle at 18% 45%, rgba(212, 175, 55, 0.22), transparent 24%),
+    radial-gradient(circle at 12% 16%, rgba(255, 255, 255, 0.08), transparent 20%),
+    linear-gradient(155deg, #050505 0%, #14100a 46%, #020202 100%);
 }
 
 .panel-glass {
-  background: linear-gradient(145deg, rgba(18, 18, 18, 0.9), rgba(5, 5, 5, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  background:
+    linear-gradient(145deg, rgba(22, 22, 22, 0.9), rgba(5, 5, 5, 0.94)),
+    linear-gradient(135deg, rgba(212, 175, 55, 0.08), transparent 36%);
+  border: 1px solid rgba(212, 175, 55, 0.24);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }

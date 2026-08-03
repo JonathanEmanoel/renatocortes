@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { ClientShell } from "@/components/client/client-shell";
 import { SectionTitle } from "@/components/client/section-title";
 import { Button } from "@/components/ui/button";
-import { readStoredCart, type StoredCartItem, writeStoredCart } from "@/lib/cart";
+import { useCartStore } from "@/store/cart-store";
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -15,66 +16,12 @@ function formatCurrency(value: number) {
 }
 
 export function CartContent() {
-  const [items, setItems] = useState<StoredCartItem[]>([]);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const items = useCartStore((state) => state.items);
+  const removeItem = useCartStore((state) => state.removeItem);
+  const increaseQuantity = useCartStore((state) => state.increaseQuantity);
+  const decreaseQuantity = useCartStore((state) => state.decreaseQuantity);
   const total = items.reduce((sum, item) => sum + item.priceValue * item.quantity, 0);
-
-  useEffect(() => {
-    setItems(readStoredCart());
-  }, []);
-
-  function persist(next: StoredCartItem[]) {
-    setItems(next);
-    writeStoredCart(next);
-  }
-
-  function updateQuantity(productId: string, delta: number) {
-    persist(
-      items.map((item) =>
-        item.id === productId ? { ...item, quantity: Math.max(1, Math.min(item.stock, item.quantity + delta)) } : item
-      )
-    );
-  }
-
-  function removeItem(productId: string) {
-    persist(items.filter((item) => item.id !== productId));
-  }
-
-  async function finishOrder() {
-    setFeedback(null);
-    setIsSubmitting(true);
-
-    try {
-      const response = await fetch("/api/sales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((item) => ({
-            productId: item.id,
-            quantity: item.quantity
-          }))
-        })
-      });
-      const payload = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        setFeedback(payload?.message ?? "Não foi possível finalizar o pedido.");
-        return;
-      }
-
-      if (payload?.whatsAppUrl) {
-        window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
-      }
-
-      persist([]);
-      setFeedback("Pedido salvo. Confirme a compra pelo WhatsApp.");
-    } catch {
-      setFeedback("Falha de conexão. Tente novamente.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+  const router = useRouter();
 
   return (
     <ClientShell>
@@ -85,30 +32,38 @@ export function CartContent() {
         <SectionTitle title="Produtos" />
         <div className="grid gap-4">
           {items.length === 0 ? (
-            <div className="rounded-[8px] border border-white/14 bg-card p-7 text-center">
-              <p className="text-lg font-bold">Seu carrinho está vazio.</p>
+            <div className="rounded-[12px] border border-primary/20 bg-card p-7 text-center">
+              <ShoppingBag className="mx-auto h-12 w-12 text-primary" />
+              <p className="mt-4 text-lg font-bold">Seu carrinho está vazio.</p>
+              <Link href="/cliente/loja" className="mt-4 inline-flex rounded-[10px] border border-primary px-6 py-3 font-black uppercase text-primary transition hover:bg-primary/10">
+                Continuar comprando
+              </Link>
             </div>
           ) : null}
+
           {items.map((item) => (
-            <article key={item.id} className="grid gap-4 rounded-[8px] border border-white/14 bg-card p-4 md:grid-cols-[80px_1fr_auto] md:items-center">
-              <div className="grid aspect-square place-items-center rounded-[8px] bg-black/50">
+            <article key={item.id} className="grid gap-4 rounded-[12px] border border-primary/18 bg-card p-4 shadow-[0_16px_44px_rgba(0,0,0,0.24)] md:grid-cols-[80px_1fr_auto] md:items-center">
+              <div className="grid aspect-square place-items-center rounded-[10px] bg-black/50">
                 <ShoppingBag className="h-8 w-8 text-primary" />
               </div>
               <div>
                 <h2 className="font-black uppercase">{item.name}</h2>
-                <p className="mt-2 text-sm text-white/58">{item.price}</p>
+                <p className="mt-2 text-sm text-white/58">Preço unitário: {item.price}</p>
                 <div className="mt-4 flex items-center gap-3">
-                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Diminuir" onClick={() => updateQuantity(item.id, -1)}>
+                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Diminuir" onClick={() => decreaseQuantity(item.id)}>
                     <Minus className="h-4 w-4" />
                   </Button>
-                  <span className="font-black">{item.quantity}</span>
-                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Aumentar" onClick={() => updateQuantity(item.id, 1)}>
+                  <span className="grid h-9 min-w-10 place-items-center rounded-[8px] border border-primary/20 font-black">{item.quantity}</span>
+                  <Button variant="ghost" size="icon" className="h-9 w-9" aria-label="Aumentar" onClick={() => increaseQuantity(item.id)}>
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
               <div className="flex items-center justify-between gap-5 md:block md:text-right">
-                <p className="text-xl font-black text-primary">{formatCurrency(item.priceValue * item.quantity)}</p>
+                <div>
+                  <p className="text-sm text-white/60">Subtotal</p>
+                  <p className="text-xl font-black text-primary">{formatCurrency(item.priceValue * item.quantity)}</p>
+                </div>
                 <Button variant="ghost" size="icon" className="mt-0 md:mt-3" aria-label="Remover" onClick={() => removeItem(item.id)}>
                   <Trash2 className="h-5 w-5" />
                 </Button>
@@ -118,16 +73,17 @@ export function CartContent() {
         </div>
       </section>
 
-      <section className="mt-8 rounded-[8px] border border-primary/35 bg-card p-6">
-        <div className="flex items-center justify-between gap-4">
-          <span className="text-white/60">Total</span>
-          <strong className="text-3xl text-primary">{formatCurrency(total)}</strong>
-        </div>
-        {feedback ? <p className="mt-6 rounded-[8px] border border-primary/50 p-4 text-primary">{feedback}</p> : null}
-        <Button className="mt-7 w-full" onClick={finishOrder} disabled={isSubmitting || items.length === 0}>
-          {isSubmitting ? "Finalizando..." : "Finalizar Pedido"}
-        </Button>
-      </section>
+      {items.length > 0 ? (
+        <section className="mt-8 rounded-[12px] border border-primary/35 bg-card p-6 shadow-panel">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-white/60">Total</span>
+            <strong className="text-3xl text-primary">{formatCurrency(total)}</strong>
+          </div>
+          <Button className="mt-7 w-full" onClick={() => router.push("/cliente/checkout")}>
+            Finalizar Compra
+          </Button>
+        </section>
+      ) : null}
     </ClientShell>
   );
 }

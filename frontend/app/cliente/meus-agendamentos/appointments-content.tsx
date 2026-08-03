@@ -155,7 +155,7 @@ export function AppointmentsContent({ appointments }: { appointments: Appointmen
                   onClick={() => setRescheduleDate(item.value)}
                   className={cn(
                     "rounded-[8px] border px-4 py-4 text-center font-black uppercase transition",
-                    rescheduleDate === item.value ? "border-primary bg-primary text-white" : "border-white/14 bg-black/40 text-white"
+                    rescheduleDate === item.value ? "border-primary bg-primary text-black" : "border-white/14 bg-black/40 text-white"
                   )}
                 >
                   {item.label}
@@ -171,7 +171,7 @@ export function AppointmentsContent({ appointments }: { appointments: Appointmen
                   onClick={() => setRescheduleTime(item)}
                   className={cn(
                     "rounded-[8px] border px-4 py-4 font-black transition",
-                    rescheduleTime === item ? "border-primary bg-primary text-white" : "border-white/14 bg-card text-white"
+                    rescheduleTime === item ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white"
                   )}
                 >
                   {item}
@@ -201,7 +201,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
       onClick={onClick}
       className={cn(
         "rounded-[8px] px-4 py-3 text-sm font-black uppercase transition",
-        active ? "bg-primary text-white" : "text-white/60 hover:text-white"
+        active ? "bg-primary text-black" : "text-white/60 hover:text-white"
       )}
     >
       {children}

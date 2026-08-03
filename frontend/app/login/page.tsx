@@ -9,15 +9,13 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { AuthLayout } from "@/components/layout/auth-layout";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
 import { createClient } from "@/utils/supabase/client";
 
 const loginSchema = z.object({
   email: z.string().email("Informe um e-mail válido."),
-  password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres."),
-  remember: z.boolean().optional()
+  password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres.")
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -26,7 +24,6 @@ export default function LoginPage() {
   const router = useRouter();
   const { login, isLoading } = useAuthStore();
   const [formError, setFormError] = useState<string | null>(null);
-  const [remember, setRemember] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -37,8 +34,7 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
     defaultValues: {
       email: "",
-      password: "",
-      remember: false
+      password: ""
     }
   });
 
@@ -63,8 +59,8 @@ export default function LoginPage() {
 
   return (
     <AuthLayout mode="login">
-      <form onSubmit={handleSubmit(onSubmit)} className="panel-glass w-full max-w-3xl rounded-[18px] px-7 py-10 md:px-16 md:py-20">
-        <Link href="/" className="mb-12 inline-flex items-center gap-3 text-sm font-bold uppercase">
+      <form onSubmit={handleSubmit(onSubmit)} className="panel-glass w-full max-w-3xl rounded-[20px] px-7 py-10 md:px-16 md:py-20">
+        <Link href="/" className="mb-12 inline-flex items-center gap-3 text-sm font-bold uppercase text-white/78 hover:text-primary">
           <ArrowLeft className="h-5 w-5" />
           Voltar
         </Link>
@@ -97,11 +93,7 @@ export default function LoginPage() {
           </label>
         </div>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-5">
-          <label className="flex items-center gap-4">
-            <Checkbox checked={remember} onCheckedChange={setRemember} />
-            <span>Lembrar-me</span>
-          </label>
+        <div className="mt-8 flex justify-end">
           <a className="text-primary underline underline-offset-4" href="#">
             Esqueci minha senha
           </a>
@@ -126,18 +118,6 @@ export default function LoginPage() {
             <ArrowRight className="h-6 w-6" />
           </Button>
         </Link>
-
-        <p className="mx-auto mt-14 max-w-lg text-center text-sm leading-relaxed text-white/62">
-          Ao continuar, você concorda com nossos{" "}
-          <a className="text-primary underline" href="#">
-            Termos de Uso
-          </a>{" "}
-          e a{" "}
-          <a className="text-primary underline" href="#">
-            Política de Privacidade
-          </a>
-          .
-        </p>
       </form>
     </AuthLayout>
   );

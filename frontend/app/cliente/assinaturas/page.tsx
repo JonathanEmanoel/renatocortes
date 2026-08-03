@@ -22,7 +22,7 @@ export default async function SubscriptionsPage() {
       plan.description ?? "Benefícios exclusivos Renato Cortes.",
       ...plan.services.map((item) => item.service.name)
     ],
-    featured: index === Math.floor(planRecords.length / 2)
+    featured: plan.name === "Plano Cabelo + Barba" || index === Math.floor(planRecords.length / 2)
   }));
 
   return <SubscriptionsContent plans={plans} />;

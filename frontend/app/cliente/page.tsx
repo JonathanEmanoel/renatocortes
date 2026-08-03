@@ -139,15 +139,7 @@ export default async function ClientDashboardPage() {
         </div>
       </section>
 
-      <section className="mt-10 rounded-[8px] border border-white/14 bg-card p-5">
-        <div className="flex items-center gap-4">
-          <ShoppingBag className="h-8 w-8 text-primary" />
-          <div>
-            <h2 className="font-black uppercase">Loja pronta para integração</h2>
-            <p className="mt-1 text-sm text-white/58">Produtos e pedidos conectados ao banco.</p>
-          </div>
-        </div>
-      </section>
+   
     </ClientShell>
   );
 }

@@ -2,6 +2,50 @@ import { PrismaClient, UserRole } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+const barberSeeds = [
+  {
+    authId: "seed-barber-renato",
+    name: "Renato",
+    email: "renato@renatocortes.com",
+    phone: "(11) 99999-1001",
+    specialty: "Cortes clássicos, degradê e finalização premium"
+  },
+  {
+    authId: "seed-barber-renan",
+    name: "Renan",
+    email: "renan@renatocortes.com",
+    phone: "(11) 99999-1002",
+    specialty: "Barba, acabamento e cortes modernos"
+  },
+  {
+    authId: "seed-barber-italo",
+    name: "Ítalo",
+    email: "italo@renatocortes.com",
+    phone: "(11) 99999-1003",
+    specialty: "Degradê navalhado, luzes e platinado"
+  }
+];
+
+const serviceSeeds = [
+  { name: "Corte Normal", description: "Corte masculino tradicional.", duration: 35, price: "22.00" },
+  { name: "Corte Degradê", description: "Degradê alinhado com acabamento Renato Cortes.", duration: 40, price: "25.00" },
+  { name: "Corte Degradê Navalhado", description: "Degradê navalhado com finalização precisa.", duration: 45, price: "30.00" },
+  { name: "Corte de Criança (1 a 10 anos)", description: "Corte infantil de 1 a 10 anos.", duration: 35, price: "25.00" },
+  { name: "Corte Todo na Tesoura", description: "Corte completo feito na tesoura.", duration: 45, price: "25.00" },
+  { name: "Barba", description: "Barba completa com desenho e acabamento.", duration: 25, price: "15.00" },
+  { name: "Só os Cantinhos", description: "Acabamento rapido dos cantinhos.", duration: 15, price: "10.00" },
+  { name: "Sobrancelha", description: "Design e limpeza de sobrancelha.", duration: 10, price: "5.00" },
+  { name: "Alisamento", description: "Alisamento masculino.", duration: 35, price: "20.00" },
+  { name: "Luzes", description: "A partir de R$ 70,00.", duration: 90, price: "70.00" },
+  { name: "Platinado", description: "A partir de R$ 80,00.", duration: 120, price: "80.00" }
+];
+
+const planSeeds = [
+  { name: "Plano Cabelo", description: "Cortes ilimitados", value: "75.00" },
+  { name: "Plano Barba", description: "Barba ilimitada", value: "65.00" },
+  { name: "Plano Cabelo + Barba", description: "Corte + barba ilimitados", value: "130.00" }
+];
+
 async function upsertUser(data: {
   authId: string;
   name: string;
@@ -55,35 +99,42 @@ async function main() {
     }
   });
 
-  const barberUsers = await Promise.all([
-    upsertUser({
-      authId: "seed-barber-ricardo",
-      name: "Ricardo",
-      email: "ricardo@renatocortes.com",
-      phone: "(11) 99999-1001",
-      role: UserRole.BARBER
-    }),
-    upsertUser({
-      authId: "seed-barber-renan",
-      name: "Renan",
-      email: "renan@renatocortes.com",
-      phone: "(11) 99999-1002",
-      role: UserRole.BARBER
-    })
-  ]);
+  const barberEmails = barberSeeds.map((barber) => barber.email);
+
+  const barberUsers = await Promise.all(
+    barberSeeds.map((barber) =>
+      upsertUser({
+        authId: barber.authId,
+        name: barber.name,
+        email: barber.email,
+        phone: barber.phone,
+        role: UserRole.BARBER
+      })
+    )
+  );
+
+  await prisma.barber.updateMany({
+    where: { user: { email: { notIn: barberEmails } } },
+    data: { active: false, deletedAt: new Date() }
+  });
+
+  await prisma.user.updateMany({
+    where: { role: UserRole.BARBER, email: { notIn: barberEmails } },
+    data: { active: false, deletedAt: new Date() }
+  });
 
   const barbers = await Promise.all(
     barberUsers.map((user, index) =>
       prisma.barber.upsert({
         where: { userId: user.id },
         update: {
-          specialty: index === 0 ? "Cortes clássicos e barba" : "Degradê, barba e acabamento",
+          specialty: barberSeeds[index].specialty,
           active: true,
           deletedAt: null
         },
         create: {
           userId: user.id,
-          specialty: index === 0 ? "Cortes clássicos e barba" : "Degradê, barba e acabamento",
+          specialty: barberSeeds[index].specialty,
           serviceCommissionPercent: "50.00",
           productCommissionPercent: "5.00"
         }
@@ -91,18 +142,15 @@ async function main() {
     )
   );
 
+  const serviceNames = serviceSeeds.map((service) => service.name);
+
+  await prisma.service.updateMany({
+    where: { name: { notIn: serviceNames } },
+    data: { active: false, deletedAt: new Date() }
+  });
+
   const services = await Promise.all(
-    [
-      { name: "Corte", description: "Corte de cabelo masculino", duration: 45, price: "45.00" },
-      { name: "Barba", description: "Barba completa com acabamento", duration: 35, price: "35.00" },
-      { name: "Corte + Barba", description: "Combo completo de corte e barba", duration: 70, price: "80.00" },
-      {
-        name: "Corte + Barba + Sobrancelha",
-        description: "Combo completo com acabamento de sobrancelha",
-        duration: 90,
-        price: "95.00"
-      }
-    ].map((service) =>
+    serviceSeeds.map((service) =>
       prisma.service.upsert({
         where: { name: service.name },
         update: { ...service, active: true, deletedAt: null },
@@ -111,12 +159,15 @@ async function main() {
     )
   );
 
+  const planNames = planSeeds.map((plan) => plan.name);
+
+  await prisma.subscriptionPlan.updateMany({
+    where: { name: { notIn: planNames } },
+    data: { active: false, deletedAt: new Date() }
+  });
+
   const plans = await Promise.all(
-    [
-      { name: "Corte de Cabelo", description: "Cortes ilimitados durante o mês.", value: "75.00" },
-      { name: "Barba", description: "Barba ilimitada durante o mês.", value: "65.00" },
-      { name: "Corte + Barba", description: "Corte e barba ilimitados durante o mês.", value: "130.00" }
-    ].map((plan) =>
+    planSeeds.map((plan) =>
       prisma.subscriptionPlan.upsert({
         where: { name: plan.name },
         update: { ...plan, active: true, deletedAt: null },
@@ -125,41 +176,34 @@ async function main() {
     )
   );
 
-  await Promise.all([
-    prisma.subscriptionPlanService.upsert({
-      where: {
-        subscriptionPlanId_serviceId: {
-          subscriptionPlanId: plans[0].id,
-          serviceId: services[0].id
-        }
-      },
-      update: {},
-      create: { subscriptionPlanId: plans[0].id, serviceId: services[0].id }
-    }),
-    prisma.subscriptionPlanService.upsert({
-      where: {
-        subscriptionPlanId_serviceId: {
-          subscriptionPlanId: plans[1].id,
-          serviceId: services[1].id
-        }
-      },
-      update: {},
-      create: { subscriptionPlanId: plans[1].id, serviceId: services[1].id }
-    }),
-    prisma.subscriptionPlanService.upsert({
-      where: {
-        subscriptionPlanId_serviceId: {
-          subscriptionPlanId: plans[2].id,
-          serviceId: services[2].id
-        }
-      },
-      update: {},
-      create: { subscriptionPlanId: plans[2].id, serviceId: services[2].id }
-    })
-  ]);
+  await prisma.subscriptionPlanService.deleteMany({
+    where: { subscriptionPlanId: { in: plans.map((plan) => plan.id) } }
+  });
+
+  const serviceByName = new Map(services.map((service) => [service.name, service]));
+  const planByName = new Map(plans.map((plan) => [plan.name, plan]));
+
+  const planServices = [
+    { planName: "Plano Cabelo", serviceNames: ["Corte Normal", "Corte Degradê", "Corte Degradê Navalhado", "Corte Todo na Tesoura"] },
+    { planName: "Plano Barba", serviceNames: ["Barba"] },
+    { planName: "Plano Cabelo + Barba", serviceNames: ["Corte Normal", "Corte Degradê", "Corte Degradê Navalhado", "Barba"] }
+  ];
+
+  await Promise.all(
+    planServices.flatMap((item) =>
+      item.serviceNames.map((serviceName) =>
+        prisma.subscriptionPlanService.create({
+          data: {
+            subscriptionPlanId: planByName.get(item.planName)!.id,
+            serviceId: serviceByName.get(serviceName)!.id
+          }
+        })
+      )
+    )
+  );
 
   const categories = await Promise.all(
-    ["Pomadas", "Shampoos", "Acessórios"].map((name) =>
+    ["Pomadas", "Shampoos", "Acessorios"].map((name) =>
       prisma.category.upsert({
         where: { name },
         update: { active: true, deletedAt: null },
@@ -187,7 +231,7 @@ async function main() {
         stock: 15
       },
       {
-        categoryId: categoryIdByName.get("Acessórios")!,
+        categoryId: categoryIdByName.get("Acessorios")!,
         name: "Pente de Madeira",
         description: "Pente para barba e cabelo.",
         price: "28.00",

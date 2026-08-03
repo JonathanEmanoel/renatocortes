@@ -46,7 +46,7 @@ export function SchedulingForm({ services, barbers, dates, availableTimes }: Sch
   async function confirmAppointment() {
     setFeedback(null);
     setIsSubmitting(true);
-    const whatsAppWindow = window.open("", "_blank", "noopener,noreferrer");
+    const whatsAppWindow = window.open("about:blank", "_blank");
 
     try {
       const response = await fetch("/api/appointments", {
@@ -71,7 +71,7 @@ export function SchedulingForm({ services, barbers, dates, availableTimes }: Sch
         if (whatsAppWindow) {
           whatsAppWindow.location.href = payload.whatsAppUrl;
         } else {
-          window.location.href = payload.whatsAppUrl;
+          window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
         }
       } else {
         whatsAppWindow?.close();
@@ -103,7 +103,7 @@ export function SchedulingForm({ services, barbers, dates, availableTimes }: Sch
             onClick={() => setStep(index)}
             className={cn(
               "rounded-[8px] border px-2 py-3 text-[10px] font-black uppercase transition md:text-sm",
-              step === index ? "border-primary bg-primary text-white" : "border-white/14 bg-card text-white/62"
+              step === index ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white/62"
             )}
           >
             {item}
@@ -160,7 +160,7 @@ export function SchedulingForm({ services, barbers, dates, availableTimes }: Sch
                     onClick={() => setDate(item.value)}
                     className={cn(
                       "rounded-[8px] border px-4 py-5 text-center font-black uppercase transition",
-                      date === item.value ? "border-primary bg-primary text-white" : "border-white/14 bg-black/40 text-white"
+                      date === item.value ? "border-primary bg-primary text-black" : "border-white/14 bg-black/40 text-white"
                     )}
                   >
                     {item.label}
@@ -182,7 +182,7 @@ export function SchedulingForm({ services, barbers, dates, availableTimes }: Sch
                   onClick={() => setTime(item)}
                   className={cn(
                     "flex items-center justify-center gap-2 rounded-[8px] border px-4 py-4 font-black transition",
-                    time === item ? "border-primary bg-primary text-white" : "border-white/14 bg-card text-white"
+                    time === item ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white"
                   )}
                 >
                   <Clock className="h-4 w-4" />

@@ -6,6 +6,20 @@ import { formatCurrency, formatShortDatePtBr } from "@/lib/format";
 import { SchedulingForm } from "./scheduling-form";
 import type { Barber } from "@/types/client-area";
 
+const serviceOrder = [
+  "Corte Normal",
+  "Corte Degradê",
+  "Corte Degradê Navalhado",
+  "Corte de Criança (1 a 10 anos)",
+  "Corte Todo na Tesoura",
+  "Barba",
+  "Só os Cantinhos",
+  "Sobrancelha",
+  "Alisamento",
+  "Luzes",
+  "Platinado"
+];
+
 function buildDates() {
   const formatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
   return Array.from({ length: 7 }, (_, index) => {
@@ -33,12 +47,18 @@ export default async function SchedulingPage() {
     })
   ]);
 
-  const services = serviceRecords.map((service) => ({
-    id: service.id,
-    name: service.name,
-    duration: `${service.duration} min`,
-    price: formatCurrency(Number(service.price))
-  }));
+  const services = serviceRecords
+    .sort((a, b) => {
+      const aIndex = serviceOrder.indexOf(a.name);
+      const bIndex = serviceOrder.indexOf(b.name);
+      return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+    })
+    .map((service) => ({
+      id: service.id,
+      name: service.name,
+      duration: `${service.duration} min`,
+      price: service.name === "Luzes" || service.name === "Platinado" ? `A partir de ${formatCurrency(Number(service.price))}` : formatCurrency(Number(service.price))
+    }));
 
   const barbers: Barber[] = barberRecords.map((barber) => ({
     id: barber.id,

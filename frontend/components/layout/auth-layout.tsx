@@ -26,12 +26,16 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ children, mode }: AuthLayoutProps) {
   return (
-    <main className="min-h-screen bg-black text-white">
+    <main className="min-h-screen bg-background text-white">
       <div className="grid min-h-screen lg:grid-cols-[38%_1fr]">
-        <aside className="auth-chair hidden min-h-screen flex-col justify-between px-12 py-14 lg:flex">
+        <aside className="auth-chair hidden min-h-screen flex-col justify-between border-r border-primary/20 px-12 py-14 lg:flex">
           <Logo className="items-start" />
           <div>
-            <div className="mb-8 h-[2px] w-16 bg-primary" />
+            <div className="mb-8 flex items-center gap-3">
+              <span className="h-[2px] w-16 bg-accentRed" />
+              <span className="h-[2px] w-10 bg-primary" />
+              <span className="h-[2px] w-7 bg-accentBlue" />
+            </div>
             <h1 className="max-w-sm text-4xl font-black uppercase leading-tight">
               Seu estilo,
               <span className="block text-primary">nossa arte.</span>
@@ -44,7 +48,7 @@ export function AuthLayout({ children, mode }: AuthLayoutProps) {
             <div className="mt-12 grid max-w-xl grid-cols-1 gap-6 xl:grid-cols-3">
               {benefits.map((benefit) => (
                 <div key={benefit.title}>
-                  <benefit.icon className="mb-4 h-9 w-9 text-primary" />
+                  <benefit.icon className="mb-4 h-9 w-9 text-primary drop-shadow-[0_0_18px_rgba(212,175,55,0.2)]" />
                   <p className="text-sm font-black uppercase">{benefit.title}</p>
                   <p className="mt-2 text-sm leading-relaxed text-white/68">{benefit.text}</p>
                 </div>

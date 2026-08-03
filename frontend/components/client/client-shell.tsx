@@ -7,6 +7,7 @@ import { Logo } from "@/components/brand/logo";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/auth-store";
+import { useCartStore } from "@/store/cart-store";
 import { useUiStore } from "@/store/ui-store";
 import { cn } from "@/utils/cn";
 
@@ -33,6 +34,7 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
 
 function ClientNavbar() {
   const openMobileMenu = useUiStore((state) => state.openMobileMenu);
+  const cartItemsCount = useCartStore((state) => state.items.reduce((sum, item) => sum + item.quantity, 0));
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-white/10 bg-black/88 px-5 py-5 backdrop-blur md:px-10">
@@ -42,9 +44,19 @@ function ClientNavbar() {
       <Link href="/cliente" aria-label="Renato Cortes Barbearia">
         <Logo compact />
       </Link>
-      <Link href="/cliente/perfil" aria-label="Meu perfil">
-        <Avatar className="h-12 w-12" />
-      </Link>
+      <div className="flex items-center gap-4">
+        <Link href="/cliente/carrinho" className="relative inline-flex items-center justify-center rounded-full border border-white/10 bg-black/80 p-2 transition hover:border-primary hover:text-primary">
+          <ShoppingBag className="h-8 w-8" />
+          {cartItemsCount > 0 ? (
+            <span className="absolute -right-2 -top-2 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-black text-black">
+              {cartItemsCount}
+            </span>
+          ) : null}
+        </Link>
+        <Link href="/cliente/perfil" aria-label="Meu perfil">
+          <Avatar className="h-12 w-12" />
+        </Link>
+      </div>
     </header>
   );
 }

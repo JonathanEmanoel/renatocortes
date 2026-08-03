@@ -5,6 +5,13 @@ import { formatCurrency } from "@/lib/format";
 import { getAuthenticatedClient } from "@/lib/server/auth";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 
+const addressSchema = z.object({
+  street: z.string().trim().min(1).max(120),
+  number: z.string().trim().min(1).max(20),
+  neighborhood: z.string().trim().min(1).max(80),
+  complement: z.string().trim().max(80).optional()
+});
+
 const requestSchema = z.object({
   items: z
     .array(
@@ -13,21 +20,25 @@ const requestSchema = z.object({
         quantity: z.number().int().min(1).max(99)
       })
     )
-    .min(1)
+    .min(1),
+  customerName: z.string().trim().min(3).max(120),
+  customerPhone: z.string().trim().min(8).max(30),
+  deliveryMethod: z.enum(["Retirar na barbearia", "Entrega"]),
+  deliveryAddress: addressSchema.optional(),
+  observations: z.string().trim().max(500).optional()
 });
 
 export async function POST(request: Request) {
   try {
-    const session = await getAuthenticatedClient();
-
-    if (!session) {
-      return NextResponse.json({ message: "Faca login para finalizar o pedido." }, { status: 401 });
-    }
-
+    const session = await getAuthenticatedClient().catch(() => null);
     const payload = requestSchema.safeParse(await request.json());
 
     if (!payload.success) {
-      return NextResponse.json({ message: "Confira os produtos do pedido." }, { status: 400 });
+      return NextResponse.json({ message: "Confira os dados do pedido." }, { status: 400 });
+    }
+
+    if (payload.data.deliveryMethod === "Entrega" && !payload.data.deliveryAddress) {
+      return NextResponse.json({ message: "Informe o endereço de entrega." }, { status: 400 });
     }
 
     const products = await prisma.product.findMany({
@@ -39,15 +50,17 @@ export async function POST(request: Request) {
     });
 
     if (products.length !== payload.data.items.length) {
-      return NextResponse.json({ message: "Um ou mais produtos nao estao disponiveis." }, { status: 404 });
+      return NextResponse.json({ message: "Um ou mais produtos não estão disponíveis." }, { status: 404 });
     }
 
     const productById = new Map(products.map((product) => [product.id, product]));
     const items = payload.data.items.map((item) => {
       const product = productById.get(item.productId)!;
+
       if (product.stock < item.quantity) {
-        throw new Error(`Estoque indisponivel para ${product.name}.`);
+        throw new Error(`Estoque indisponível para ${product.name}.`);
       }
+
       return {
         product,
         quantity: item.quantity,
@@ -55,11 +68,12 @@ export async function POST(request: Request) {
         subtotal: Number(product.price) * item.quantity
       };
     });
+
     const total = items.reduce((sum, item) => sum + item.subtotal, 0);
 
     const sale = await prisma.sale.create({
       data: {
-        clientId: session.client.id,
+        clientId: session?.client.id,
         status: "OPEN",
         totalValue: total,
         items: {
@@ -73,42 +87,50 @@ export async function POST(request: Request) {
     });
 
     const productList = items
-      .map((item) => `- ${item.quantity}x ${item.product.name} (${formatCurrency(item.subtotal)})`)
-      .join("\n");
+      .map((item) => `${item.product.name}\n${item.quantity}x - ${formatCurrency(item.subtotal)}`)
+      .join("\n\n");
 
-    const message = [
-      "Ola!",
+    const messageParts = [
+      "Olá!",
       "",
-      "Gostaria de realizar o seguinte pedido:",
-      "",
-      "Cliente:",
-      "",
-      session.user.name || "Nao informado",
-      "",
-      "Telefone:",
-      "",
-      session.user.phone || "Nao informado",
-      "",
-      "Produtos:",
+      "Gostaria de fazer o seguinte pedido:",
       "",
       productList,
       "",
-      "Valor Total:",
-      "",
+      "Total:",
       formatCurrency(total),
       "",
-      "Aguardo confirmacao.",
+      "Nome:",
+      payload.data.customerName,
       "",
-      "Obrigado!"
-    ].join("\n");
+      "Telefone:",
+      payload.data.customerPhone,
+      "",
+      "Forma de recebimento:",
+      payload.data.deliveryMethod,
+      ""
+    ];
+
+    if (payload.data.deliveryMethod === "Entrega" && payload.data.deliveryAddress) {
+      messageParts.push("Endereço:");
+      messageParts.push(`${payload.data.deliveryAddress.street}, ${payload.data.deliveryAddress.number}`);
+      messageParts.push(
+        `${payload.data.deliveryAddress.neighborhood}${payload.data.deliveryAddress.complement ? ` - ${payload.data.deliveryAddress.complement}` : ""}`
+      );
+      messageParts.push("");
+    }
+
+    messageParts.push("Observações:");
+    messageParts.push(payload.data.observations || "Nenhuma");
+    messageParts.push("", "Obrigado!");
 
     return NextResponse.json({
       saleId: sale.id,
-      whatsAppUrl: buildWhatsAppUrl(message)
+      whatsAppUrl: buildWhatsAppUrl(messageParts.join("\n"))
     });
   } catch (error) {
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Nao foi possivel finalizar o pedido." },
+      { message: error instanceof Error ? error.message : "Não foi possível finalizar o pedido." },
       { status: 500 }
     );
   }

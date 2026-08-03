@@ -16,21 +16,23 @@ export const mockClient: Client = {
 };
 
 export const services: Service[] = [
-  { id: "corte", name: "Corte", duration: "45 min", price: "R$ 45,00", icon: Scissors },
-  { id: "corte-barba", name: "Corte + Barba", duration: "70 min", price: "R$ 80,00", icon: Star },
-  {
-    id: "corte-barba-sobrancelha",
-    name: "Corte + Barba + Sobrancelha",
-    duration: "90 min",
-    price: "R$ 95,00",
-    icon: Sparkles
-  }
+  { id: "corte-normal", name: "Corte Normal", duration: "35 min", price: "R$ 22,00", icon: Scissors },
+  { id: "corte-degrade", name: "Corte Degradê", duration: "40 min", price: "R$ 25,00", icon: Scissors },
+  { id: "corte-degrade-navalhado", name: "Corte Degradê Navalhado", duration: "45 min", price: "R$ 30,00", icon: Scissors },
+  { id: "corte-crianca", name: "Corte de Criança (1 a 10 anos)", duration: "35 min", price: "R$ 25,00", icon: Scissors },
+  { id: "corte-tesoura", name: "Corte Todo na Tesoura", duration: "45 min", price: "R$ 25,00", icon: Scissors },
+  { id: "barba", name: "Barba", duration: "25 min", price: "R$ 15,00", icon: Star },
+  { id: "cantinhos", name: "Só os Cantinhos", duration: "15 min", price: "R$ 10,00", icon: Sparkles },
+  { id: "sobrancelha", name: "Sobrancelha", duration: "10 min", price: "R$ 5,00", icon: Sparkles },
+  { id: "alisamento", name: "Alisamento", duration: "35 min", price: "R$ 20,00", icon: Sparkles },
+  { id: "luzes", name: "Luzes", duration: "90 min", price: "A partir de R$ 70,00", icon: Sparkles },
+  { id: "platinado", name: "Platinado", duration: "120 min", price: "A partir de R$ 80,00", icon: Sparkles }
 ];
 
 export const barbers: Barber[] = [
-  { id: "renan", name: "Renan Cortes", specialty: "Cortes clássicos e barba", rating: "4.9" },
-  { id: "marcos", name: "Marcos Silva", specialty: "Degradê e acabamento", rating: "4.8" },
-  { id: "daniel", name: "Daniel Rocha", specialty: "Barba premium", rating: "4.7" }
+  { id: "renato", name: "Renato", specialty: "Cortes clássicos, degradê e finalização premium", rating: "5.0" },
+  { id: "renan", name: "Renan", specialty: "Barba, acabamento e cortes modernos", rating: "5.0" },
+  { id: "italo", name: "Ítalo", specialty: "Degradê navalhado, luzes e platinado", rating: "5.0" }
 ];
 
 export const appointments: Appointment[] = [
@@ -38,23 +40,23 @@ export const appointments: Appointment[] = [
     id: "1",
     date: "18 Jul 2026",
     time: "10:30",
-    barber: "Renan Cortes",
-    service: "Corte + Barba",
+    barber: "Renan",
+    service: "Corte Degradê",
     status: "Confirmado"
   },
   {
     id: "2",
     date: "22 Jun 2026",
     time: "14:00",
-    barber: "Marcos Silva",
-    service: "Corte",
+    barber: "Renato",
+    service: "Corte Normal",
     status: "Concluido"
   },
   {
     id: "3",
     date: "11 Jun 2026",
     time: "09:30",
-    barber: "Daniel Rocha",
+    barber: "Ítalo",
     service: "Barba",
     status: "Concluido"
   }
@@ -72,7 +74,7 @@ export const products: Product[] = [
   },
   {
     id: "oleo-para-barba",
-    name: "Óleo para barba",
+    name: "Oleo para barba",
     price: "R$ 55,00",
     description: "Hidrata, perfuma e deixa os fios mais alinhados.",
     category: "Oleos"
@@ -86,7 +88,7 @@ export const products: Product[] = [
   },
   {
     id: "balm-pos-barba",
-    name: "Balm pós-barba",
+    name: "Balm pos-barba",
     price: "R$ 48,00",
     description: "Acalma a pele e reduz irritações após o barbear.",
     category: "Acessorios"
@@ -109,29 +111,23 @@ export const products: Product[] = [
 
 export const plans: SubscriptionPlan[] = [
   {
-    id: "corte-cabelo",
-    name: "Corte de Cabelo",
+    id: "plano-cabelo",
+    name: "Plano Cabelo",
     price: "R$75/mês",
-    benefits: ["Cortes ilimitados", "Economia mensal", "Prioridade na agenda"]
+    benefits: ["Cortes ilimitados"]
   },
   {
-    id: "barba",
-    name: "Barba",
+    id: "plano-barba",
+    name: "Plano Barba",
     price: "R$65/mês",
-    benefits: ["Barba ilimitada", "Acabamento premium", "Produtos selecionados"]
+    benefits: ["Barba ilimitada"]
   },
   {
-    id: "corte-barba",
-    name: "Corte + Barba",
+    id: "plano-cabelo-barba",
+    name: "Plano Cabelo + Barba",
     price: "R$130/mês",
-    benefits: ["Corte e barba ilimitados", "Maior economia", "Atendimento preferencial"],
+    benefits: ["Corte + barba ilimitados"],
     featured: true
-  },
-  {
-    id: "combo-completo",
-    name: "Corte + Barba + Sobrancelha",
-    price: "Em breve",
-    benefits: ["Plano completo", "Benefícios exclusivos", "Visual sempre alinhado"]
   }
 ];
 

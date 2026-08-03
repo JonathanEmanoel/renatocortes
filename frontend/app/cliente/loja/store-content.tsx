@@ -34,7 +34,7 @@ export function StoreContent({ products, categories }: StoreContentProps) {
             onClick={() => setCategory(item)}
             className={cn(
               "whitespace-nowrap rounded-full border px-4 py-2 text-xs font-black uppercase transition",
-              category === item ? "border-primary bg-primary text-white" : "border-white/14 bg-card text-white/70"
+              category === item ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white/70"
             )}
           >
             {item === "Oleos" ? "Óleos" : item === "Acessorios" ? "Acessórios" : item}
