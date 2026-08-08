@@ -7,11 +7,15 @@ import type { SubscriptionPlan } from "@/types/client-area";
 export function SubscriptionCard({
   plan,
   onRequest,
-  isLoading
+  isLoading,
+  actionLabel = "Solicitar Plano",
+  disabled
 }: {
   plan: SubscriptionPlan;
   onRequest?: (plan: SubscriptionPlan) => void;
   isLoading?: boolean;
+  actionLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <article
@@ -40,8 +44,8 @@ export function SubscriptionCard({
           </p>
         ))}
       </div>
-      <Button className="mt-8 w-full" variant={plan.featured ? "primary" : "outline"} onClick={() => onRequest?.(plan)} disabled={isLoading}>
-        {isLoading ? "Solicitando..." : "Solicitar Plano"}
+      <Button className="mt-8 w-full" variant={plan.featured ? "primary" : "outline"} onClick={() => onRequest?.(plan)} disabled={isLoading || disabled}>
+        {isLoading ? "Salvando..." : actionLabel}
       </Button>
     </article>
   );

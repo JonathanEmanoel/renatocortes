@@ -21,7 +21,7 @@ const benefits = [
 
 type AuthLayoutProps = {
   children: React.ReactNode;
-  mode: "login" | "register";
+  mode: "login" | "register" | "recovery";
 };
 
 export function AuthLayout({ children, mode }: AuthLayoutProps) {
