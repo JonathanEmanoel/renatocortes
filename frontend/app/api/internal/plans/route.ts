@@ -59,7 +59,7 @@ export async function DELETE(request: Request) {
   if (!session) return NextResponse.json({ message: "Acesso não autorizado." }, { status: 403 });
   const payload = deleteSchema.safeParse(await request.json());
   if (!payload.success) return NextResponse.json({ message: "Informe o plano." }, { status: 400 });
-  const plan = await prisma.subscriptionPlan.update({ where: { id: payload.data.planId }, data: { active: false, deletedAt: null } });
+  const plan = await prisma.subscriptionPlan.update({ where: { id: payload.data.planId }, data: { active: false, deletedAt: new Date() } });
   await createAuditLog({ userId: session.user.id, action: "DELETE_PLAN", entity: "SubscriptionPlan", entityId: plan.id });
   return NextResponse.json({ plan });
 }

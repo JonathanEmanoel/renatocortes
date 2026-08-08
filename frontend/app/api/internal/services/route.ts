@@ -54,7 +54,7 @@ export async function DELETE(request: Request) {
   if (!session) return NextResponse.json({ message: "Acesso não autorizado." }, { status: 403 });
   const payload = deleteSchema.safeParse(await request.json());
   if (!payload.success) return NextResponse.json({ message: "Informe o serviço." }, { status: 400 });
-  const service = await prisma.service.update({ where: { id: payload.data.serviceId }, data: { active: false, deletedAt: null } });
+  const service = await prisma.service.update({ where: { id: payload.data.serviceId }, data: { active: false, deletedAt: new Date() } });
   await createAuditLog({ userId: session.user.id, action: "DELETE_SERVICE", entity: "Service", entityId: service.id });
   return NextResponse.json({ service });
 }

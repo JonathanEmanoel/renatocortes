@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import { FinanceExpensePanel } from "@/components/internal/finance-expense-panel";
+import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
@@ -37,8 +38,14 @@ export default async function AdminFinancePage() {
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
       <section className="mx-auto max-w-7xl">
-        <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Financeiro</p>
-        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Despesas e indicadores</h1>
+        <InternalPageHeader
+          eyebrow="Financeiro"
+          title="Despesas e indicadores"
+          backHref="/admin"
+          backLabel="Painel administrativo"
+          role={session.user.role}
+          hasBarber={Boolean(session.user.barber?.id)}
+        />
         <FinanceExpensePanel
           categories={expenseCategories.map((category) => ({ id: category.id, name: category.name }))}
           expenses={expenses.map((expense) => ({

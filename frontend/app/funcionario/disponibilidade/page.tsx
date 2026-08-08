@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import { AvailabilityForm } from "@/components/internal/availability-form";
+import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
@@ -40,8 +41,14 @@ export default async function BarberAvailabilityPage() {
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
       <section className="mx-auto max-w-4xl">
-        <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Agenda</p>
-        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Minha disponibilidade</h1>
+        <InternalPageHeader
+          eyebrow="Agenda"
+          title="Minha disponibilidade"
+          backHref="/funcionario"
+          backLabel="Painel do barbeiro"
+          role={session.user.role}
+          hasBarber={Boolean(session.user.barber?.id)}
+        />
         <div className="mt-8">
           <AvailabilityForm barberId={session.user.barber.id} days={days} />
         </div>

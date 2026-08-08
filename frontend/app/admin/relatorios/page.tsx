@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import { Download } from "lucide-react";
+import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
@@ -30,8 +31,14 @@ export default async function AdminReportsPage() {
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
       <section className="mx-auto max-w-7xl">
-        <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Relatorios</p>
-        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Indicadores e exportacoes</h1>
+        <InternalPageHeader
+          eyebrow="Relatorios"
+          title="Indicadores e exportacoes"
+          backHref="/admin"
+          backLabel="Painel administrativo"
+          role={session.user.role}
+          hasBarber={Boolean(session.user.barber?.id)}
+        />
 
         <div className="mt-8 flex flex-wrap gap-3">
           <a href="/api/internal/reports/export?format=csv" className="inline-flex rounded-[10px] border border-primary/40 px-4 py-3 text-sm font-black uppercase text-primary">

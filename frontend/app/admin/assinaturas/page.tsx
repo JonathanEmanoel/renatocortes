@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { redirect } from "next/navigation";
+import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { SubscriptionActionButtons } from "@/components/internal/subscription-action-buttons";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -69,8 +70,14 @@ export default async function AdminSubscriptionsPage() {
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
       <section className="mx-auto max-w-7xl">
-        <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Assinaturas</p>
-        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Gestao de assinantes</h1>
+        <InternalPageHeader
+          eyebrow="Assinaturas"
+          title="Gestao de assinantes"
+          backHref="/admin"
+          backLabel="Painel administrativo"
+          role={session.user.role}
+          hasBarber={Boolean(session.user.barber?.id)}
+        />
 
         <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
           <h2 className="text-xl font-black uppercase">Prioridade: vencidas ou proximas do vencimento</h2>

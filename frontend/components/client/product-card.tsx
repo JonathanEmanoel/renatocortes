@@ -36,15 +36,24 @@ export function ProductCard({ product, compact = false }: ProductCardProps) {
   return (
     <article className="group overflow-hidden rounded-[8px] border border-white/14 bg-card transition hover:-translate-y-1 hover:border-primary/50">
       <Link href={`/cliente/produto/${product.id}`} className="block">
-        <div className="grid aspect-[4/3] place-items-center bg-gradient-to-br from-[#1b120d] via-[#0b0b0b] to-black">
-          <ShoppingBag className="h-16 w-16 text-white/80 transition group-hover:text-primary" />
-        </div>
+        {product.image ? (
+          <div
+            aria-label={product.name}
+            className="aspect-[4/3] bg-cover bg-center transition duration-300 group-hover:scale-[1.03]"
+            role="img"
+            style={{ backgroundImage: `url("${product.image}")` }}
+          />
+        ) : (
+          <div className="grid aspect-[4/3] place-items-center bg-gradient-to-br from-[#1b120d] via-[#0b0b0b] to-black">
+            <ShoppingBag className="h-16 w-16 text-white/80 transition group-hover:text-primary" />
+          </div>
+        )}
       </Link>
       <div className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="font-black uppercase leading-snug">{product.name}</h3>
-            {!compact ? <p className="mt-2 text-sm leading-relaxed text-white/58">{product.description}</p> : null}
+            {!compact && product.description ? <p className="mt-2 text-sm leading-relaxed text-white/58">{product.description}</p> : null}
           </div>
           <Button size="icon" variant="ghost" aria-label={`Adicionar ${product.name}`} onClick={addToCart} disabled={product.stock === 0}>
             <Plus className="h-6 w-6" />
