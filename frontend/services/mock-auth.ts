@@ -30,6 +30,10 @@ export async function signInMock(credentials: LoginCredentials): Promise<AuthUse
     throw new Error("E-mail ou senha inválidos.");
   }
 
-  const { password: _password, ...safeUser } = user;
-  return safeUser;
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role
+  };
 }

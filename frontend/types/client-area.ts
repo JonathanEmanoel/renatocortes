@@ -21,7 +21,10 @@ export type Service = {
   id: string;
   name: string;
   duration: string;
+  durationMinutes?: number;
   price: string;
+  priceValue?: number;
+  coveredBySubscription?: boolean;
   icon: LucideIcon;
 };
 
@@ -29,7 +32,7 @@ export type Barber = {
   id: string;
   name: string;
   specialty: string;
-  rating: string;
+  rating?: string;
 };
 
 export type Appointment = {
@@ -38,7 +41,7 @@ export type Appointment = {
   time: string;
   barber: string;
   service: string;
-  status: "Pendente" | "Confirmado" | "Concluido" | "Cancelado";
+  status: "Pendente" | "Confirmado" | "Recusado" | "Concluido" | "Cancelado";
   observations?: string;
   duration?: string;
 };

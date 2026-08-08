@@ -29,6 +29,11 @@ export function ServiceCard({ service, selected, onClick }: ServiceCardProps) {
       <p className="mt-4 inline-flex rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-base font-black text-primary">
         {service.price}
       </p>
+      {service.coveredBySubscription ? (
+        <p className="mt-3 inline-flex rounded-full border border-[#0EA5E9]/35 bg-[#0EA5E9]/10 px-3 py-1 text-xs font-black uppercase text-[#7DD3FC]">
+          Coberto pelo plano
+        </p>
+      ) : null}
     </button>
   );
 }

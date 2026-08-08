@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import Link from "next/link";
-import { Crown, ShoppingBag } from "lucide-react";
+import { Crown } from "lucide-react";
 import { AppointmentCard } from "@/components/client/appointment-card";
 import { ClientShell } from "@/components/client/client-shell";
 import { ProductCard } from "@/components/client/product-card";
@@ -18,6 +18,7 @@ import type { Appointment, Product, ProductCategory } from "@/types/client-area"
 const statusLabel: Record<string, Appointment["status"]> = {
   PENDING: "Pendente",
   CONFIRMED: "Confirmado",
+  REJECTED: "Recusado",
   COMPLETED: "Concluido",
   CANCELED: "Cancelado"
 };
@@ -42,13 +43,14 @@ export default async function ClientDashboardPage() {
           },
           include: {
             barber: { include: { user: true } },
-            service: true
+            service: true,
+            services: { include: { service: true } }
           },
           orderBy: { dataHora: "asc" }
         })
       : null,
     prisma.product.findMany({
-      where: { active: true, deletedAt: null },
+      where: { active: true, visibleInStore: true, deletedAt: null },
       include: { category: true },
       orderBy: { createdAt: "desc" },
       take: 4
@@ -61,10 +63,16 @@ export default async function ClientDashboardPage() {
         date: formatDatePtBr(nextAppointmentRecord.dataHora),
         time: formatTimePtBr(nextAppointmentRecord.dataHora),
         barber: nextAppointmentRecord.barber.user.name,
-        service: nextAppointmentRecord.service.name,
+        service: nextAppointmentRecord.services.length
+          ? nextAppointmentRecord.services.map((item) => item.service.name).join(" + ")
+          : nextAppointmentRecord.service.name,
         status: statusLabel[nextAppointmentRecord.status] ?? "Pendente",
         observations: nextAppointmentRecord.observacoes ?? undefined,
-        duration: `${nextAppointmentRecord.service.duration} min`
+        duration: `${
+          nextAppointmentRecord.services.length
+            ? nextAppointmentRecord.services.reduce((sum, item) => sum + item.duration, 0)
+            : nextAppointmentRecord.service.duration
+        } min`
       }
     : null;
 

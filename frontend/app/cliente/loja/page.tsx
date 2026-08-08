@@ -15,7 +15,7 @@ function mapCategory(name: string): ProductCategory {
 
 export default async function StorePage() {
   const productRecords = await prisma.product.findMany({
-    where: { active: true, deletedAt: null },
+    where: { active: true, visibleInStore: true, deletedAt: null },
     include: { category: true },
     orderBy: { name: "asc" }
   });

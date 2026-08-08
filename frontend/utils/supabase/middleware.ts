@@ -33,7 +33,7 @@ export async function updateSession(request: NextRequest) {
     data: { user }
   } = await supabase.auth.getUser();
 
-  const isPrivateRoute = pathname.startsWith("/cliente") || pathname.startsWith("/funcionario");
+  const isPrivateRoute = pathname.startsWith("/cliente") || pathname.startsWith("/funcionario") || pathname.startsWith("/admin");
   const isAuthRoute = pathname === "/login" || pathname === "/cadastro";
 
   if (isPrivateRoute && !user) {
@@ -45,7 +45,7 @@ export async function updateSession(request: NextRequest) {
 
   if (isAuthRoute && user) {
     const url = request.nextUrl.clone();
-    url.pathname = "/cliente";
+    url.pathname = "/auth/redirect";
     return NextResponse.redirect(url);
   }
 

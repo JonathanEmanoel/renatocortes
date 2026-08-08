@@ -31,7 +31,8 @@ export async function GET(request: Request) {
       },
       include: {
         barber: { include: { user: true } },
-        service: true
+        service: true,
+        services: { include: { service: true } }
       }
     });
 
@@ -39,15 +40,19 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL("/cliente/meus-agendamentos", request.url));
     }
 
+    const services = appointment.services.length
+      ? appointment.services
+      : [{ service: appointment.service, duration: appointment.service.duration }];
+
     const token = await exchangeGoogleCodeForToken(code);
     await createGoogleCalendarEvent(
       token.access_token,
       buildCalendarEvent({
-        serviceName: appointment.service.name,
+        serviceName: services.map((item) => item.service.name).join(" + "),
         barberName: appointment.barber.user.name,
-        barbershopPhone: "+55 81 99586-4757",
+        barbershopPhone: appointment.barber.user.phone ?? "+55 81 99586-4757",
         start: appointment.dataHora,
-        durationMinutes: appointment.service.duration
+        durationMinutes: services.reduce((sum, item) => sum + item.duration, 0)
       })
     );
 

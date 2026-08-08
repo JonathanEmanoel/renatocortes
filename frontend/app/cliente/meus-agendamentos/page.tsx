@@ -11,6 +11,7 @@ import type { Appointment } from "@/types/client-area";
 const statusLabel: Record<string, Appointment["status"]> = {
   PENDING: "Pendente",
   CONFIRMED: "Confirmado",
+  REJECTED: "Recusado",
   COMPLETED: "Concluido",
   CANCELED: "Cancelado",
   NO_SHOW: "Cancelado"
@@ -30,7 +31,8 @@ export default async function MyAppointmentsPage() {
     },
     include: {
       barber: { include: { user: true } },
-      service: true
+      service: true,
+      services: { include: { service: true } }
     },
     orderBy: [{ dataHora: "asc" }]
   });
@@ -42,11 +44,17 @@ export default async function MyAppointmentsPage() {
       date: formatDatePtBr(appointment.dataHora),
       time: formatTimePtBr(appointment.dataHora),
       barber: appointment.barber.user.name,
-      service: appointment.service.name,
+      service: appointment.services.length
+        ? appointment.services.map((item) => item.service.name).join(" + ")
+        : appointment.service.name,
       status: statusLabel[appointment.status] ?? "Pendente",
       observations: appointment.observacoes ?? undefined,
       isUpcoming: appointment.dataHora >= now && ["PENDING", "CONFIRMED"].includes(appointment.status),
-      duration: `${appointment.service.duration} min`,
+      duration: `${
+        appointment.services.length
+          ? appointment.services.reduce((sum, item) => sum + item.duration, 0)
+          : appointment.service.duration
+      } min`,
       serviceId: appointment.serviceId,
       barberId: appointment.barberId
     }))

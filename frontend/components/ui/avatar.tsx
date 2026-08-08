@@ -10,6 +10,7 @@ type AvatarProps = {
 export function Avatar({ name, imageUrl, className }: AvatarProps) {
   if (imageUrl) {
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={imageUrl}
         alt={name ?? "Avatar"}

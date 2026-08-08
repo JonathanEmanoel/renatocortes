@@ -28,7 +28,7 @@ function mapCategory(name: string): ProductCategory {
 export default async function ProductPage({ params }: ProductPageProps) {
   const { id } = await params;
   const product = await prisma.product.findFirst({
-    where: { id, active: true, deletedAt: null },
+    where: { id, active: true, visibleInStore: true, deletedAt: null },
     include: { category: true }
   });
 
@@ -41,6 +41,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
       id: { not: product.id },
       categoryId: product.categoryId,
       active: true,
+      visibleInStore: true,
       deletedAt: null
     },
     include: { category: true },

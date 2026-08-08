@@ -24,7 +24,7 @@ export function SubscriptionsContent({ plans }: { plans: SubscriptionPlan[] }) {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok) {
-        setFeedback(payload?.message ?? "Não foi possível solicitar a assinatura.");
+        setFeedback(payload?.message ?? "Nao foi possivel solicitar a assinatura.");
         return;
       }
 
@@ -32,9 +32,9 @@ export function SubscriptionsContent({ plans }: { plans: SubscriptionPlan[] }) {
         window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
       }
 
-      setFeedback("Solicitação salva. Confirme a assinatura pelo WhatsApp.");
+      setFeedback("Solicitacao salva. Confirme a assinatura pelo WhatsApp.");
     } catch {
-      setFeedback("Falha de conexão. Tente novamente.");
+      setFeedback("Falha de conexao. Tente novamente.");
     } finally {
       setLoadingPlanId(null);
     }
@@ -50,7 +50,7 @@ export function SubscriptionsContent({ plans }: { plans: SubscriptionPlan[] }) {
           <Crown className="h-8 w-8 text-primary" />
         </div>
         <h2 className="mt-5 max-w-2xl text-2xl font-black uppercase md:text-4xl">Quantidade ilimitada, economia e visual sempre em dia.</h2>
-        <p className="mt-4 max-w-xl text-white/68">Escolha o plano ideal e solicite a ativação.</p>
+        <p className="mt-4 max-w-xl text-white/68">Escolha o plano ideal e solicite a ativacao.</p>
       </section>
 
       <section className="mt-10">

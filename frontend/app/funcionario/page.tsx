@@ -1,50 +1,263 @@
-"use client";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-import { BarChart3, CalendarDays, LogOut, Package, Users } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { Avatar } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/store/auth-store";
+import { redirect } from "next/navigation";
+import { BarChart3, CalendarDays, Clock, Scissors, Users } from "lucide-react";
+import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
+import { InternalPageHeader } from "@/components/internal/internal-page-header";
+import { ManualProductSaleForm } from "@/components/internal/manual-product-sale-form";
+import { ManualServiceForm } from "@/components/internal/manual-service-form";
+import { formatCurrency } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
+import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
-const cards = [
-  { title: "Dashboard", icon: BarChart3 },
-  { title: "Agenda", icon: CalendarDays },
-  { title: "Clientes", icon: Users },
-  { title: "Produtos", icon: Package }
-];
+function startOfWeek(date: Date) {
+  const next = new Date(date);
+  const day = next.getDay() || 7;
+  next.setDate(next.getDate() - day + 1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
 
-export default function EmployeePage() {
-  const router = useRouter();
-  const { user, logout } = useAuthStore();
+function appointmentRevenue(appointment: { service: { price: unknown }; services?: { price: unknown }[] }) {
+  const services = appointment.services ?? [];
+  if (services.length > 0) return services.reduce((sum, service) => sum + Number(service.price), 0);
+  return Number(appointment.service.price);
+}
 
-  function handleLogout() {
-    logout();
-    router.push("/");
-  }
+function appointmentServicesLabel(appointment: { service: { name: string }; services?: { service: { name: string } }[] }) {
+  const services = appointment.services ?? [];
+  if (services.length > 0) return services.map((item) => item.service.name).join(" + ");
+  return appointment.service.name;
+}
+
+function dailySeries(appointments: { dataHora: Date; service: { price: unknown }; services?: { price: unknown }[] }[]) {
+  return Array.from({ length: 7 }).map((_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - index));
+    const key = date.toISOString().slice(0, 10);
+    const dayAppointments = appointments.filter((appointment) => appointment.dataHora.toISOString().slice(0, 10) === key);
+    return {
+      label: date.toLocaleDateString("pt-BR", { weekday: "short" }),
+      count: dayAppointments.length,
+      revenue: dayAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0)
+    };
+  });
+}
+
+export default async function BarberPanelPage() {
+  const session = await getAuthenticatedUser();
+
+  if (!session) redirect("/login?redirectTo=/funcionario");
+  if (session.user.role !== "BARBER" && session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+
+  const barberId = session.user.barber?.id;
+  if (!barberId) redirect("/admin");
+
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+  const weekStart = startOfWeek(now);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const last30Days = new Date(now);
+  last30Days.setDate(last30Days.getDate() - 30);
+
+  const [
+    todayAppointments,
+    weekAppointmentsCount,
+    monthAppointmentsCount,
+    todayClients,
+    monthClients,
+    commissions,
+    weekAppointments,
+    monthAppointments,
+    upcomingAppointments,
+    serviceOptions,
+    productOptions
+  ] = await Promise.all([
+    prisma.appointment.findMany({
+      where: { barberId, dataHora: { gte: todayStart, lt: todayEnd }, deletedAt: null },
+      include: { client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } }, service: true, services: { include: { service: true } } },
+      orderBy: { dataHora: "asc" },
+      take: 10
+    }),
+    prisma.appointment.count({ where: { barberId, dataHora: { gte: weekStart }, deletedAt: null } }),
+    prisma.appointment.count({ where: { barberId, dataHora: { gte: monthStart, lt: monthEnd }, deletedAt: null } }),
+    prisma.appointment.findMany({
+      where: { barberId, dataHora: { gte: todayStart, lt: todayEnd }, status: "COMPLETED", deletedAt: null },
+      distinct: ["clientId"],
+      select: { clientId: true }
+    }),
+    prisma.appointment.findMany({
+      where: { barberId, dataHora: { gte: monthStart, lt: monthEnd }, status: "COMPLETED", deletedAt: null },
+      distinct: ["clientId"],
+      select: { clientId: true }
+    }),
+    prisma.employeeCommission.findMany({
+      where: { barberId, createdAt: { gte: monthStart } },
+      select: { amount: true }
+    }),
+    prisma.appointment.findMany({
+      where: { barberId, dataHora: { gte: weekStart }, deletedAt: null },
+      include: { service: true, services: true }
+    }),
+    prisma.appointment.findMany({
+      where: { barberId, dataHora: { gte: last30Days }, deletedAt: null },
+      include: { service: true, services: true }
+    }),
+    prisma.appointment.findMany({
+      where: { barberId, dataHora: { gte: now }, status: { in: ["PENDING", "CONFIRMED"] }, deletedAt: null },
+      include: { client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } }, service: true, services: { include: { service: true } } },
+      orderBy: { dataHora: "asc" },
+      take: 8
+    }),
+    prisma.service.findMany({
+      where: { active: true, deletedAt: null },
+      orderBy: { name: "asc" }
+    }),
+    prisma.product.findMany({
+      where: { active: true, deletedAt: null },
+      orderBy: { name: "asc" }
+    })
+  ]);
+
+  const commissionTotal = commissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
+  const weekRevenue = weekAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0);
+  const monthRevenue = monthAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0);
+  const series = dailySeries(monthAppointments);
+  const maxSeriesValue = Math.max(...series.map((item) => item.count), 1);
+  const nextAppointment = upcomingAppointments[0];
+
+  const stats = [
+    { label: "Agendamentos hoje", value: todayAppointments.length, icon: CalendarDays },
+    { label: "Agendamentos semana", value: weekAppointmentsCount, icon: CalendarDays },
+    { label: "Agendamentos mês", value: monthAppointmentsCount, icon: CalendarDays },
+    { label: "Clientes hoje", value: todayClients.length, icon: Users },
+    { label: "Clientes mês", value: monthClients.length, icon: Users },
+    { label: "Comissão acumulada", value: formatCurrency(commissionTotal), icon: BarChart3 },
+    { label: "Faturamento semana", value: formatCurrency(weekRevenue), icon: BarChart3 },
+    { label: "Faturamento mês", value: formatCurrency(monthRevenue), icon: BarChart3 }
+  ];
 
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
-      <section className="mx-auto max-w-5xl">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Avatar name={user?.name} className="border-primary" />
-            <div>
-              <p className="text-sm uppercase tracking-[0.16em] text-primary">Painel do funcionário</p>
-              <h1 className="text-2xl font-black">{user?.name ?? "Funcionário"}</h1>
-            </div>
-          </div>
-          <Button variant="ghost" size="icon" onClick={handleLogout} aria-label="Sair">
-            <LogOut className="h-6 w-6" />
-          </Button>
-        </div>
-        <div className="mt-10 grid gap-5 md:grid-cols-2">
-          {cards.map((card) => (
-            <article key={card.title} className="rounded-[8px] border border-white/14 bg-card p-6">
-              <card.icon className="h-8 w-8 text-primary" />
-              <h2 className="mt-5 text-xl font-black uppercase">{card.title}</h2>
-              <p className="mt-3 text-white/62">Módulo reservado para as próximas entregas.</p>
+      <section className="mx-auto max-w-6xl">
+        <InternalPageHeader
+          eyebrow="Painel do barbeiro"
+          title={`Ola, ${session.user.name}`}
+          backHref="/funcionario"
+          backLabel="Painel do barbeiro"
+          role={session.user.role}
+          hasBarber={Boolean(session.user.barber?.id)}
+        />
+
+        <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {stats.map((stat) => (
+            <article key={stat.label} className="rounded-[12px] border border-primary/20 bg-card p-5 shadow-panel">
+              <stat.icon className="h-7 w-7 text-primary" />
+              <p className="mt-4 text-sm uppercase text-white/55">{stat.label}</p>
+              <strong className="mt-2 block text-2xl text-primary">{stat.value}</strong>
             </article>
           ))}
+        </div>
+
+        <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
+          <div className="flex items-center gap-3">
+            <Scissors className="h-6 w-6 text-primary" />
+            <h2 className="text-xl font-black uppercase">Próximo cliente</h2>
+          </div>
+          {nextAppointment ? (
+            <article className="mt-5 rounded-[10px] border border-white/10 bg-black/30 p-4">
+              <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                <div>
+                  <p className="font-black uppercase">{nextAppointment.client.user.name}</p>
+                  <p className="mt-1 text-sm text-white/60">{appointmentServicesLabel(nextAppointment)}</p>
+                  {nextAppointment.client.subscriptions.length > 0 ? (
+                    <span className="mt-2 inline-flex rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-black uppercase text-primary">
+                      Cliente assinante
+                    </span>
+                  ) : null}
+                </div>
+                <div className="text-sm text-white/65 md:text-right">
+                  <p>{nextAppointment.dataHora.toLocaleDateString("pt-BR")}</p>
+                  <p className="flex items-center gap-2 font-black text-primary md:justify-end">
+                    <Clock className="h-4 w-4" />
+                    {nextAppointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  <p className="mt-1 uppercase">{nextAppointment.status}</p>
+                </div>
+              </div>
+            </article>
+          ) : (
+            <p className="mt-5 text-white/65">Nenhum próximo agendamento.</p>
+          )}
+        </section>
+
+        <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
+          <h2 className="text-xl font-black uppercase">Cortes por dia</h2>
+          <div className="mt-5 grid gap-4 md:grid-cols-7">
+            {series.map((item) => (
+              <div key={item.label} className="rounded-[10px] border border-white/10 bg-black/30 p-3 text-center">
+                <div className="mx-auto flex h-28 w-8 items-end rounded-full bg-white/10">
+                  <div className="w-full rounded-full bg-primary" style={{ height: `${Math.max(8, (item.count / maxSeriesValue) * 100)}%` }} />
+                </div>
+                <p className="mt-3 text-xs uppercase text-white/55">{item.label}</p>
+                <strong className="text-primary">{item.count}</strong>
+                <p className="text-[11px] text-white/45">{formatCurrency(item.revenue)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
+          <h2 className="text-xl font-black uppercase">Agenda</h2>
+          <div className="mt-5 grid gap-4">
+            {upcomingAppointments.length === 0 ? <p className="text-white/65">Nenhum próximo agendamento.</p> : null}
+            {upcomingAppointments.map((appointment) => (
+              <article key={appointment.id} className="rounded-[10px] border border-white/10 bg-black/30 p-4">
+                <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                  <div>
+                    <p className="font-black uppercase">{appointment.client.user.name}</p>
+                    <p className="mt-1 text-sm text-white/60">{appointmentServicesLabel(appointment)}</p>
+                    {appointment.client.subscriptions.length > 0 ? (
+                      <span className="mt-2 inline-flex rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-black uppercase text-primary">
+                        Cliente assinante
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="text-sm text-white/65 md:text-right">
+                    <p>{appointment.dataHora.toLocaleDateString("pt-BR")}</p>
+                    <p className="font-black text-primary">{appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                    <p className="mt-1 uppercase">{appointment.status}</p>
+                  </div>
+                </div>
+                <AppointmentActionButtons appointmentId={appointment.id} status={appointment.status} />
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <div className="mt-8">
+          <ManualServiceForm
+            services={serviceOptions.map((service) => ({ id: service.id, name: service.name, price: Number(service.price) }))}
+            barbers={[{ id: barberId, name: session.user.name }]}
+            defaultBarberId={barberId}
+          />
+        </div>
+        <div className="mt-8">
+          <ManualProductSaleForm
+            products={productOptions.map((product) => ({
+              id: product.id,
+              name: product.name,
+              price: Number(product.price),
+              stock: product.stock,
+              active: product.active,
+              visibleInStore: product.visibleInStore
+            }))}
+          />
         </div>
       </section>
     </main>

@@ -1,0 +1,68 @@
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+import { redirect } from "next/navigation";
+import { FinanceExpensePanel } from "@/components/internal/finance-expense-panel";
+import { prisma } from "@/lib/prisma";
+import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+
+export default async function AdminFinancePage() {
+  const session = await getAuthenticatedUser();
+  if (!session) redirect("/login?redirectTo=/admin/financeiro");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(todayStart);
+  todayEnd.setDate(todayEnd.getDate() + 1);
+  const dueSoonEnd = new Date(todayStart);
+  dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
+
+  const [expenseCategories, expenses, monthExpenses, annualExpenses, monthSales, annualSales, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
+    await Promise.all([
+      prisma.expenseCategory.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
+      prisma.expense.findMany({ where: { deletedAt: null }, include: { category: true }, orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }], take: 80 }),
+      prisma.expense.findMany({ where: { createdAt: { gte: monthStart }, deletedAt: null }, select: { amount: true } }),
+      prisma.expense.findMany({ where: { createdAt: { gte: yearStart }, deletedAt: null }, select: { amount: true } }),
+      prisma.sale.findMany({ where: { createdAt: { gte: monthStart }, status: "COMPLETED", deletedAt: null }, select: { totalValue: true } }),
+      prisma.sale.findMany({ where: { createdAt: { gte: yearStart }, status: "COMPLETED", deletedAt: null }, select: { totalValue: true } }),
+      prisma.expense.count({ where: { status: { not: "PAID" }, dueDate: { lt: todayStart }, deletedAt: null } }),
+      prisma.expense.count({ where: { status: { not: "PAID" }, dueDate: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
+      prisma.expense.count({ where: { status: { not: "PAID" }, dueDate: { gte: todayStart, lte: dueSoonEnd }, deletedAt: null } })
+    ]);
+
+  return (
+    <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
+      <section className="mx-auto max-w-7xl">
+        <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Financeiro</p>
+        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Despesas e indicadores</h1>
+        <FinanceExpensePanel
+          categories={expenseCategories.map((category) => ({ id: category.id, name: category.name }))}
+          expenses={expenses.map((expense) => ({
+            id: expense.id,
+            categoryId: expense.categoryId ?? "",
+            categoryName: expense.category?.name ?? "",
+            name: expense.name,
+            description: expense.description ?? "",
+            amount: Number(expense.amount),
+            dueDate: expense.dueDate ? expense.dueDate.toISOString().slice(0, 10) : "",
+            paidAt: expense.paidAt ? expense.paidAt.toISOString().slice(0, 10) : "",
+            paymentMethod: expense.paymentMethod ?? "",
+            status: expense.status,
+            notes: expense.notes ?? ""
+          }))}
+          monthRevenue={monthSales.reduce((sum, sale) => sum + Number(sale.totalValue), 0)}
+          monthExpenses={monthExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)}
+          annualRevenue={annualSales.reduce((sum, sale) => sum + Number(sale.totalValue), 0)}
+          annualExpenses={annualExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)}
+          overdueCount={overdueExpenses}
+          dueTodayCount={dueTodayExpenses}
+          dueSoonCount={dueSoonExpenses}
+        />
+      </section>
+    </main>
+  );
+}

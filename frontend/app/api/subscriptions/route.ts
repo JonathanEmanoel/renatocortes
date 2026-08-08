@@ -40,7 +40,8 @@ export async function POST(request: Request) {
         clientId: session.client.id,
         subscriptionPlanId: plan.id,
         startDate: new Date(),
-        active: false
+        active: false,
+        status: "PENDING"
       }
     });
 

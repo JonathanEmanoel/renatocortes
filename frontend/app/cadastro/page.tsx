@@ -73,7 +73,7 @@ export default function RegisterPage() {
     }
 
     if (!authData.session) {
-      router.push("/login");
+      router.push("/login?registered=check-email");
       return;
     }
 

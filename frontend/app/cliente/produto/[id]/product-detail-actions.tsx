@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { Minus, Plus, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { addStoredCartItem } from "@/lib/cart";
 import { useCartStore } from "@/store/cart-store";
 
 type ProductDetailActionsProps = {

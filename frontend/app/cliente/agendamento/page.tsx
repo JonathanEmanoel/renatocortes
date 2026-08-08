@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatShortDatePtBr } from "@/lib/format";
 import { SchedulingForm } from "./scheduling-form";
 import type { Barber } from "@/types/client-area";
+import { getAuthenticatedClient } from "@/lib/server/auth";
 
 const serviceOrder = [
   "Corte Normal",
@@ -35,17 +36,33 @@ function buildDates() {
 }
 
 export default async function SchedulingPage() {
-  const [serviceRecords, barberRecords] = await Promise.all([
+  const session = await getAuthenticatedClient();
+  const [serviceRecords, barberRecords, subscriptionRecords] = await Promise.all([
     prisma.service.findMany({
       where: { active: true, deletedAt: null },
       orderBy: { name: "asc" }
     }),
     prisma.barber.findMany({
       where: { active: true, deletedAt: null },
-      include: { user: true },
+      include: { user: true, availability: { where: { active: true, deletedAt: null }, orderBy: { weekDay: "asc" } } },
       orderBy: { createdAt: "asc" }
-    })
+    }),
+    session
+      ? prisma.subscription.findMany({
+          where: {
+            clientId: session.client.id,
+            active: true,
+            deletedAt: null,
+            OR: [{ endDate: null }, { endDate: { gte: new Date() } }]
+          },
+          include: { subscriptionPlan: { include: { services: true } } }
+        })
+      : []
   ]);
+
+  const coveredServiceIds = new Set(
+    subscriptionRecords.flatMap((subscription) => subscription.subscriptionPlan.services.map((item) => item.serviceId))
+  );
 
   const services = serviceRecords
     .sort((a, b) => {
@@ -57,17 +74,29 @@ export default async function SchedulingPage() {
       id: service.id,
       name: service.name,
       duration: `${service.duration} min`,
-      price: service.name === "Luzes" || service.name === "Platinado" ? `A partir de ${formatCurrency(Number(service.price))}` : formatCurrency(Number(service.price))
+      durationMinutes: service.duration,
+      price: service.name === "Luzes" || service.name === "Platinado" ? `A partir de ${formatCurrency(Number(service.price))}` : formatCurrency(Number(service.price)),
+      priceValue: Number(service.price),
+      coveredBySubscription: coveredServiceIds.has(service.id)
     }));
 
   const barbers: Barber[] = barberRecords.map((barber) => ({
     id: barber.id,
     name: barber.user.name,
-    specialty: barber.specialty ?? "Barbeiro Renato Cortes",
-    rating: "5.0"
+    specialty: barber.specialty ?? "Barbeiro Renato Cortes"
   }));
 
   const availableTimes = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
+  const availabilityByBarber = Object.fromEntries(
+    barberRecords.map((barber) => [
+      barber.id,
+      barber.availability.map((item) => ({
+        weekDay: item.weekDay,
+        startTime: item.startTime,
+        endTime: item.endTime
+      }))
+    ])
+  );
 
-  return <SchedulingForm services={services} barbers={barbers} dates={buildDates()} availableTimes={availableTimes} />;
+  return <SchedulingForm services={services} barbers={barbers} dates={buildDates()} availableTimes={availableTimes} availabilityByBarber={availabilityByBarber} />;
 }

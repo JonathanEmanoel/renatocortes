@@ -23,6 +23,9 @@ model User {
   barber        Barber?
   client        Client?
   notifications Notification[]
+  auditLogs     AuditLog[]
+  expensesCreated Expense[]      @relation("ExpenseCreatedBy")
+  expensesUpdated Expense[]      @relation("ExpenseUpdatedBy")
 
   @@index([email])
   @@index([role])
@@ -37,6 +40,7 @@ model Client {
   updatedAt     DateTime       @updatedAt
   deletedAt     DateTime?
   appointments  Appointment[]
+  reviews       Review[]
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   payments      Payment[]
   sales         Sale[]
@@ -61,6 +65,8 @@ model Barber {
   availability             BarberAvailability[]
   user                     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   commissions              EmployeeCommission[]
+  reviews                  Review[]
+  sales                    Sale[]
 
   @@index([userId])
   @@index([active])
@@ -78,6 +84,7 @@ model Service {
   updatedAt                DateTime                  @updatedAt
   deletedAt                DateTime?
   appointments             Appointment[]
+  appointmentServices      AppointmentService[]
   subscriptionPlanServices SubscriptionPlanService[]
 
   @@index([active])
@@ -98,8 +105,10 @@ model Appointment {
   barber      Barber               @relation(fields: [barberId], references: [id])
   client      Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   service     Service              @relation(fields: [serviceId], references: [id])
+  services    AppointmentService[]
   commissions EmployeeCommission[]
   payments    Payment[]
+  review      Review?
 
   @@index([clientId])
   @@index([barberId])
@@ -109,11 +118,30 @@ model Appointment {
   @@map("appointments")
 }
 
+model AppointmentService {
+  id            String      @id @default(uuid())
+  appointmentId String
+  serviceId     String
+  price         Decimal     @db.Decimal(10, 2)
+  duration      Int
+  createdAt     DateTime    @default(now())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service       Service     @relation(fields: [serviceId], references: [id])
+
+  @@unique([appointmentId, serviceId])
+  @@index([appointmentId])
+  @@index([serviceId])
+  @@map("appointment_services")
+}
+
 model SubscriptionPlan {
   id            String                    @id @default(uuid())
   name          String                    @unique
   description   String?
   value         Decimal                   @db.Decimal(10, 2)
+  benefits      Json?
+  cutsIncluded  Int?
+  periodDays    Int                       @default(30)
   active        Boolean                   @default(true)
   createdAt     DateTime                  @default(now())
   updatedAt     DateTime                  @updatedAt
@@ -144,6 +172,7 @@ model Subscription {
   startDate          DateTime
   endDate            DateTime?
   active             Boolean          @default(true)
+  status             SubscriptionStatus @default(PENDING)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
   deletedAt          DateTime?
@@ -176,9 +205,11 @@ model Product {
   name           String          @unique
   description    String?
   price          Decimal         @db.Decimal(10, 2)
+  costPrice      Decimal         @default(0.00) @db.Decimal(10, 2)
   stock          Int             @default(0)
   image          String?
   active         Boolean         @default(true)
+  visibleInStore Boolean         @default(true)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
@@ -208,16 +239,26 @@ model StockMovement {
 model Sale {
   id          String               @id @default(uuid())
   clientId    String?
+  barberId    String?
   status      SaleStatus           @default(OPEN)
   totalValue  Decimal              @db.Decimal(10, 2)
+  customerName  String?
+  customerPhone String?
+  deliveryMethod String?
+  deliveryAddress Json?
+  observations String?
+  completedAt DateTime?
+  canceledAt  DateTime?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   deletedAt   DateTime?
   commissions EmployeeCommission[]
   payments    Payment[]
   items       SaleItem[]
+  barber      Barber?              @relation(fields: [barberId], references: [id], onDelete: SetNull)
   client      Client?              @relation(fields: [clientId], references: [id])
 
+  @@index([barberId])
   @@index([clientId])
   @@index([status])
   @@map("sales")
@@ -229,6 +270,7 @@ model SaleItem {
   productId String
   quantity  Int
   price     Decimal @db.Decimal(10, 2)
+  costPrice Decimal @default(0.00) @db.Decimal(10, 2)
   product   Product @relation(fields: [productId], references: [id])
   sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
@@ -264,20 +306,66 @@ model Payment {
   @@map("payments")
 }
 
-model Expense {
-  id           String                 @id @default(uuid())
-  name         String
-  description  String?
-  amount       Decimal                @db.Decimal(10, 2)
-  dueDate      DateTime?
-  paidAt       DateTime?
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  deletedAt    DateTime?
-  transactions FinancialTransaction[]
+model ExpenseCategory {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  expenses  Expense[]
 
+  @@index([active])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id              String                 @id @default(uuid())
+  categoryId      String?
+  createdById     String?
+  updatedById     String?
+  name            String
+  description     String?
+  amount          Decimal                @db.Decimal(10, 2)
+  dueDate         DateTime?
+  paidAt          DateTime?
+  paymentMethod   PaymentMethod?
+  status          ExpenseStatus          @default(PENDING)
+  notes           String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  deletedAt       DateTime?
+  category        ExpenseCategory?       @relation(fields: [categoryId], references: [id])
+  createdBy       User?                  @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy       User?                  @relation("ExpenseUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  transactions    FinancialTransaction[]
+
+  @@index([categoryId])
+  @@index([createdById])
+  @@index([updatedById])
   @@index([dueDate])
+  @@index([paidAt])
+  @@index([status])
   @@map("expenses")
+}
+
+model FinancialClosure {
+  id              String        @id @default(uuid())
+  period          ClosurePeriod @default(WEEKLY)
+  startDate       DateTime
+  endDate         DateTime
+  grossRevenue    Decimal       @default(0.00) @db.Decimal(10, 2)
+  expensesTotal   Decimal       @default(0.00) @db.Decimal(10, 2)
+  netProfit       Decimal       @default(0.00) @db.Decimal(10, 2)
+  barberShare     Decimal       @default(0.00) @db.Decimal(10, 2)
+  businessShare   Decimal       @default(0.00) @db.Decimal(10, 2)
+  createdAt       DateTime      @default(now())
+  closedAt        DateTime?
+
+  @@index([period])
+  @@index([startDate])
+  @@index([endDate])
+  @@map("financial_closures")
 }
 
 model FinancialTransaction {
@@ -381,16 +469,55 @@ model Settings {
   @@map("settings")
 }
 
+model Review {
+  id            String      @id @default(uuid())
+  appointmentId String      @unique
+  clientId      String
+  barberId      String
+  rating        Int
+  comment       String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  client        Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  barber        Barber      @relation(fields: [barberId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([barberId])
+  @@index([rating])
+  @@map("reviews")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
 enum UserRole {
   ADMIN
   CLIENT
   BARBER
   EMPLOYEE
+  DEVELOPER
 }
 
 enum AppointmentStatus {
   PENDING
   CONFIRMED
+  REJECTED
   CANCELED
   COMPLETED
   NO_SHOW
@@ -410,6 +537,27 @@ enum PaymentStatus {
   FAILED
   CANCELED
   REFUNDED
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  CANCELED
+  EXPIRED
+}
+
+enum ExpenseStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELED
+}
+
+enum ClosurePeriod {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
 }
 
 enum StockMovementType {

@@ -6,22 +6,25 @@ const barberSeeds = [
   {
     authId: "seed-barber-renato",
     name: "Renato",
-    email: "renato@renatocortes.com",
-    phone: "(11) 99999-1001",
+    email: "renato3010andrade@gmail.com",
+    phone: "81 9 9590-1793",
+    role: UserRole.ADMIN,
     specialty: "Cortes clássicos, degradê e finalização premium"
   },
   {
     authId: "seed-barber-renan",
     name: "Renan",
-    email: "renan@renatocortes.com",
-    phone: "(11) 99999-1002",
+    email: "gustavosilvagustavo.mendes@gmail.com",
+    phone: "81 9 9388-7519",
+    role: UserRole.BARBER,
     specialty: "Barba, acabamento e cortes modernos"
   },
   {
     authId: "seed-barber-italo",
     name: "Ítalo",
-    email: "italo@renatocortes.com",
-    phone: "(11) 99999-1003",
+    email: "claso6806@gmail.com",
+    phone: "81 9 9329-0688",
+    role: UserRole.BARBER,
     specialty: "Degradê navalhado, luzes e platinado"
   }
 ];
@@ -56,7 +59,6 @@ async function upsertUser(data: {
   return prisma.user.upsert({
     where: { email: data.email },
     update: {
-      authId: data.authId,
       name: data.name,
       phone: data.phone,
       role: data.role,
@@ -75,11 +77,19 @@ async function upsertUser(data: {
 
 async function main() {
   const admin = await upsertUser({
-    authId: "seed-admin-renato-cortes",
-    name: "Administrador Renato Cortes",
-    email: "admin@renatocortes.com",
-    phone: "(11) 99999-0000",
+    authId: "seed-admin-renato",
+    name: "Renato",
+    email: "renato3010andrade@gmail.com",
+    phone: "81 9 9590-1793",
     role: UserRole.ADMIN
+  });
+
+  await upsertUser({
+    authId: "seed-developer-jonathan",
+    name: "Jonathan Emanoel",
+    email: "reservabarbearia605@gmail.com",
+    phone: "81 9 84667532",
+    role: "DEVELOPER" as UserRole
   });
 
   const clientUser = await upsertUser({
@@ -108,7 +118,7 @@ async function main() {
         name: barber.name,
         email: barber.email,
         phone: barber.phone,
-        role: UserRole.BARBER
+        role: barber.role
       })
     )
   );

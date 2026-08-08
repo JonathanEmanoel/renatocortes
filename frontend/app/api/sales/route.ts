@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       where: {
         id: { in: payload.data.items.map((item) => item.productId) },
         active: true,
+        visibleInStore: true,
         deletedAt: null
       }
     });
@@ -76,11 +77,17 @@ export async function POST(request: Request) {
         clientId: session?.client.id,
         status: "OPEN",
         totalValue: total,
+        customerName: payload.data.customerName,
+        customerPhone: payload.data.customerPhone,
+        deliveryMethod: payload.data.deliveryMethod,
+        deliveryAddress: payload.data.deliveryAddress ?? undefined,
+        observations: payload.data.observations,
         items: {
           create: items.map((item) => ({
             productId: item.product.id,
             quantity: item.quantity,
-            price: item.price
+            price: item.price,
+            costPrice: item.product.costPrice
           }))
         }
       }

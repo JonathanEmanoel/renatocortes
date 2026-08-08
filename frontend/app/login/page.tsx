@@ -11,6 +11,7 @@ import { AuthLayout } from "@/components/layout/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
+import type { UserRole } from "@/types/auth";
 import { createClient } from "@/utils/supabase/client";
 
 const loginSchema = z.object({
@@ -19,6 +20,12 @@ const loginSchema = z.object({
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
+
+function getDashboardPath(role: UserRole, hasBarber = false) {
+  if (role === "CLIENT") return "/cliente";
+  if (role === "BARBER" || (role === "ADMIN" && hasBarber)) return "/funcionario";
+  return "/admin";
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,10 +46,16 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("registered") === "check-email") {
+      setFormError("Conta criada. Confirme seu e-mail antes de entrar.");
+    }
+
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) {
-        router.replace("/cliente");
+        const response = await fetch("/api/auth/me").catch(() => null);
+        const user = response?.ok ? await response.json() : null;
+        router.replace(user?.role ? getDashboardPath(user.role, Boolean(user.hasBarber)) : "/cliente");
       }
     });
   }, [router]);
@@ -51,7 +64,7 @@ export default function LoginPage() {
     setFormError(null);
     try {
       const user = await login({ email: data.email, password: data.password });
-      router.push(user.role === "CLIENT" ? "/cliente" : "/funcionario");
+      router.push(getDashboardPath(user.role, Boolean(user.hasBarber)));
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Não foi possível entrar.");
     }

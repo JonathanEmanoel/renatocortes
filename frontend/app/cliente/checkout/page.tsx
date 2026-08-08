@@ -43,7 +43,7 @@ export default function CheckoutPage() {
     setFeedback(null);
 
     if (items.length === 0) {
-      setFeedback("Seu carrinho está vazio.");
+      setFeedback("Seu carrinho esta vazio.");
       return;
     }
 
@@ -53,12 +53,11 @@ export default function CheckoutPage() {
     }
 
     if (deliveryMethod === "Entrega" && (!street.trim() || !number.trim() || !neighborhood.trim())) {
-      setFeedback("Informe rua, número e bairro para entrega.");
+      setFeedback("Informe rua, numero e bairro para entrega.");
       return;
     }
 
     setIsSubmitting(true);
-    const whatsAppWindow = window.open("", "_blank", "noopener,noreferrer");
 
     try {
       const response = await fetch("/api/sales", {
@@ -85,27 +84,18 @@ export default function CheckoutPage() {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok) {
-        whatsAppWindow?.close();
-        setFeedback(payload?.message ?? "Não foi possível enviar seu pedido.");
+        setFeedback(payload?.message ?? "Nao foi possivel enviar seu pedido.");
         return;
       }
 
       if (payload?.whatsAppUrl) {
-        if (whatsAppWindow) {
-          whatsAppWindow.location.href = payload.whatsAppUrl;
-        } else {
-          window.location.href = payload.whatsAppUrl;
-          return;
-        }
-      } else {
-        whatsAppWindow?.close();
+        window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
       }
 
       clearCart();
       router.push("/cliente/checkout/sucesso");
     } catch {
-      whatsAppWindow?.close();
-      setFeedback("Falha de conexão. Tente novamente.");
+      setFeedback("Falha de conexao. Tente novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -119,7 +109,7 @@ export default function CheckoutPage() {
       {items.length === 0 ? (
         <section className="mt-9 rounded-[12px] border border-primary/20 bg-card p-7 text-center">
           <ShoppingBag className="mx-auto h-12 w-12 text-primary" />
-          <p className="mt-4 text-lg font-bold">Seu carrinho está vazio.</p>
+          <p className="mt-4 text-lg font-bold">Seu carrinho esta vazio.</p>
           <Link href="/cliente/loja" className="mt-5 inline-flex rounded-[10px] border border-primary px-6 py-3 font-black uppercase text-primary">
             Continuar comprando
           </Link>
@@ -163,8 +153,8 @@ export default function CheckoutPage() {
                     <Input value={street} onChange={(event) => setStreet(event.target.value)} placeholder="Rua" />
                   </label>
                   <label className="grid gap-2">
-                    <span className="font-bold">Número</span>
-                    <Input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="Número" />
+                    <span className="font-bold">Numero</span>
+                    <Input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="Numero" />
                   </label>
                   <label className="grid gap-2">
                     <span className="font-bold">Bairro</span>
@@ -178,12 +168,12 @@ export default function CheckoutPage() {
               ) : null}
 
               <label className="grid gap-2">
-                <span className="font-bold">Observações</span>
+                <span className="font-bold">Observacoes</span>
                 <textarea
                   value={observations}
                   onChange={(event) => setObservations(event.target.value)}
                   className="min-h-28 rounded-[10px] border border-primary/20 bg-black/35 p-4 text-white outline-none transition placeholder:text-white/50 focus:border-primary/80"
-                  placeholder="Alguma observação para o pedido?"
+                  placeholder="Alguma observacao para o pedido?"
                 />
               </label>
             </div>
