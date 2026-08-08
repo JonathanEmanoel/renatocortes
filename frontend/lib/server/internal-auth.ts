@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/utils/supabase/server";
 import type { UserRole } from "@/types/auth";
@@ -9,6 +10,18 @@ type InternalProfile = {
   role: UserRole;
   phone?: string;
   barberSpecialty?: string;
+};
+
+type AuthenticatedDbUser = Prisma.UserGetPayload<{
+  include: {
+    barber: true;
+    client: true;
+  };
+}>;
+
+type AuthenticatedSession = {
+  authUser: Awaited<ReturnType<ReturnType<typeof createClient>["auth"]["getUser"]>>["data"]["user"];
+  user: AuthenticatedDbUser;
 };
 
 const internalProfiles: Record<string, InternalProfile> = {
@@ -51,7 +64,7 @@ export function getInternalProfileByEmail(email: string) {
   return internalProfiles[email.trim().toLowerCase()] ?? null;
 }
 
-export async function getAuthenticatedUser() {
+export async function getAuthenticatedUser(): Promise<AuthenticatedSession | null> {
   const cookieStore = await cookies();
   const supabase = createClient(cookieStore);
   const {
@@ -143,6 +156,10 @@ export async function getAuthenticatedUser() {
         client: true
       }
     });
+  }
+
+  if (!dbUser) {
+    return null;
   }
 
   if (internalProfile && (internalProfile.role === "BARBER" || internalProfile.role === "ADMIN") && !dbUser.barber) {
