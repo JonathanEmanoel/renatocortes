@@ -46,8 +46,14 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("registered") === "check-email") {
+    const params = new URLSearchParams(window.location.search);
+
+    if (params.get("registered") === "check-email") {
       setFormError("Conta criada. Confirme seu e-mail antes de entrar.");
+    }
+
+    if (params.get("password") === "updated") {
+      setFormError("Senha atualizada. Entre com sua nova senha.");
     }
 
     const supabase = createClient();
@@ -107,9 +113,9 @@ export default function LoginPage() {
         </div>
 
         <div className="mt-8 flex justify-end">
-          <a className="text-primary underline underline-offset-4" href="#">
+          <Link className="text-primary underline underline-offset-4" href="/recuperar-senha">
             Esqueci minha senha
-          </a>
+          </Link>
         </div>
 
         {formError ? <p className="mt-6 rounded-[8px] border border-primary/50 p-4 text-primary">{formError}</p> : null}

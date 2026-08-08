@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, KeyRound, LogOut, Mail, Phone, Star, UserRound, X } from "lucide-react";
+import { CalendarDays, Eye, EyeOff, KeyRound, Lock, LogOut, Mail, Phone, Star, UserRound, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { ClientShell } from "@/components/client/client-shell";
 import { SectionTitle } from "@/components/client/section-title";
@@ -11,6 +11,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
+import { createClient } from "@/utils/supabase/client";
 
 type AddressFields = {
   street: string;
@@ -59,6 +60,7 @@ export function ProfileContent({ initialProfile }: { initialProfile: ProfileData
   ];
   const [form, setForm] = useState(initialProfile);
   const [isOpen, setIsOpen] = useState(false);
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -116,6 +118,22 @@ export function ProfileContent({ initialProfile }: { initialProfile: ProfileData
     }
   }
 
+  async function savePassword(password: string, confirmPassword: string) {
+    if (password.length < 6) {
+      return "Use no mínimo 6 caracteres.";
+    }
+    if (password !== confirmPassword) {
+      return "As senhas precisam ser iguais.";
+    }
+
+    const { error } = await createClient().auth.updateUser({ password });
+    if (error) return "Não foi possível alterar a senha agora. Tente novamente.";
+
+    setIsPasswordOpen(false);
+    setFeedback("Senha alterada com sucesso.");
+    return null;
+  }
+
   return (
     <ClientShell>
       <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Perfil</p>
@@ -138,7 +156,7 @@ export function ProfileContent({ initialProfile }: { initialProfile: ProfileData
             <UserRound className="h-5 w-5" />
             Editar Dados
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setIsPasswordOpen(true)}>
             <KeyRound className="h-5 w-5" />
             Alterar Senha
           </Button>
@@ -188,7 +206,57 @@ export function ProfileContent({ initialProfile }: { initialProfile: ProfileData
           updateAddress={updateAddress}
         />
       ) : null}
+      {isPasswordOpen ? <PasswordModal onClose={() => setIsPasswordOpen(false)} onSave={savePassword} /> : null}
     </ClientShell>
+  );
+}
+
+function PasswordModal({ onClose, onSave }: { onClose: () => void; onSave: (password: string, confirmPassword: string) => Promise<string | null> }) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function handleSave() {
+    setFeedback(null);
+    setIsSaving(true);
+    const error = await onSave(password, confirmPassword);
+    if (error) setFeedback(error);
+    setIsSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[75] grid place-items-end bg-black/78 px-4 py-4 backdrop-blur-sm md:place-items-center" role="presentation" onMouseDown={onClose}>
+      <section className="w-full max-w-xl rounded-[8px] border border-white/16 bg-[#070707] shadow-panel" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 p-5">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Segurança</p>
+            <h2 id="password-modal-title" className="mt-2 text-xl font-black uppercase">Alterar senha</h2>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar alteração de senha"><X className="h-6 w-6" /></Button>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-white/65">Defina uma nova senha para acessar sua conta.</p>
+          <div className="mt-6 grid gap-5">
+            <label className="grid gap-2">
+              <span className="text-sm font-bold">Nova senha</span>
+              <Input icon={<Lock className="h-5 w-5" />} type={showPassword ? "text" : "password"} placeholder="Digite sua nova senha" trailing={<button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar senha">{showPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}</button>} value={password} onChange={(event) => setPassword(event.target.value)} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-bold">Confirmar nova senha</span>
+              <Input icon={<Lock className="h-5 w-5" />} type={showConfirmPassword ? "text" : "password"} placeholder="Confirme sua nova senha" trailing={<button type="button" onClick={() => setShowConfirmPassword((current) => !current)} aria-label="Mostrar confirmação de senha">{showConfirmPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}</button>} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            </label>
+          </div>
+          {feedback ? <p className="mt-5 rounded-[8px] border border-primary/50 p-4 text-primary">{feedback}</p> : null}
+          <div className="mt-7 grid gap-3 sm:grid-cols-2">
+            <Button variant="outline" onClick={onClose} disabled={isSaving}>Cancelar</Button>
+            <Button onClick={handleSave} disabled={isSaving}>{isSaving ? "Salvando..." : "Salvar nova senha"}</Button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 

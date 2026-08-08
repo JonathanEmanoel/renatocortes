@@ -21,7 +21,7 @@ const navigation = [
 
 export function ClientShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-black pb-28 text-white">
+    <main className="min-h-screen bg-black pb-28 text-white md:pb-0">
       <ClientNavbar />
       <ClientDrawer />
       <div className="barber-texture min-h-screen px-5 pb-10 pt-32 md:px-8">
@@ -131,7 +131,7 @@ function BottomNavigation() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/96 px-2 py-4 backdrop-blur">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/96 px-2 py-4 backdrop-blur md:hidden">
       <div className="mx-auto grid max-w-2xl grid-cols-5 gap-1">
         {navigation.map((item) => {
           const active = pathname === item.href || (item.href !== "/cliente" && pathname.startsWith(item.href));

@@ -1,27 +1,106 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarDays, Clock, MessageSquare, Scissors, User, X } from "lucide-react";
 import { Badge } from "@/components/client/badge";
 import { Button } from "@/components/ui/button";
 import type { Appointment } from "@/types/client-area";
+import { cn } from "@/utils/cn";
 
 type AppointmentCardProps = {
   appointment: Appointment;
-  detailed?: boolean;
+  canManage?: boolean;
 };
 
-export function AppointmentCard({ appointment, detailed = false }: AppointmentCardProps) {
+const availableTimes = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
+
+function buildDates() {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index);
+    return {
+      value: date.toISOString().slice(0, 10),
+      label: new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date).replace(".", "")
+    };
+  });
+}
+
+export function AppointmentCard({ appointment, canManage = true }: AppointmentCardProps) {
+  const router = useRouter();
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState(() => buildDates()[0].value);
+  const [rescheduleTime, setRescheduleTime] = useState(availableTimes[0]);
+  const dates = buildDates();
+
+  async function cancelAppointment() {
+    if (!window.confirm("Deseja cancelar este agendamento?")) return;
+
+    setActionError(null);
+    setIsCancelling(true);
+    try {
+      const response = await fetch("/api/appointments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", appointmentId: appointment.id })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setActionError(payload?.message ?? "Não foi possível cancelar o agendamento.");
+        return;
+      }
+
+      setIsDetailsOpen(false);
+      router.refresh();
+    } catch {
+      setActionError("Falha de conexão ao cancelar o agendamento.");
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  function rescheduleAppointment() {
+    setActionError(null);
+    setIsDetailsOpen(false);
+    setIsRescheduleOpen(true);
+  }
+
+  async function confirmReschedule() {
+    setActionError(null);
+    setIsRescheduling(true);
+    try {
+      const response = await fetch("/api/appointments", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reschedule",
+          appointmentId: appointment.id,
+          date: rescheduleDate,
+          time: rescheduleTime
+        })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        setActionError(payload?.message ?? "Não foi possível reagendar o atendimento.");
+        return;
+      }
+
+      setIsRescheduleOpen(false);
+      router.refresh();
+    } catch {
+      setActionError("Falha de conexão ao reagendar o atendimento.");
+    } finally {
+      setIsRescheduling(false);
+    }
+  }
 
   return (
     <>
       <article className="overflow-hidden rounded-[8px] border border-white/14 bg-card">
-        {detailed ? (
-          <div className="grid aspect-[16/7] place-items-center bg-gradient-to-br from-[#1b120d] via-black to-[#090909]">
-            <Scissors className="h-14 w-14 text-primary" />
-          </div>
-        ) : null}
         <div className="p-5">
           <div className="mb-5 flex items-center justify-between gap-4">
             <Badge tone={appointment.status === "Confirmado" ? "green" : "white"}>{appointment.status}</Badge>
@@ -87,13 +166,46 @@ export function AppointmentCard({ appointment, detailed = false }: AppointmentCa
                 </div>
               ) : null}
 
+              {actionError ? <p className="mt-5 rounded-[8px] border border-primary/50 p-3 text-sm text-primary">{actionError}</p> : null}
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <Button variant="outline">Cancelar Agendamento</Button>
-                <Button>Reagendar</Button>
-                <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>
+                {canManage ? <Button variant="outline" onClick={cancelAppointment} disabled={isCancelling}>{isCancelling ? "Cancelando..." : "Cancelar Agendamento"}</Button> : null}
+                {canManage ? <Button onClick={rescheduleAppointment}>Reagendar</Button> : null}
+                <Button variant="outline" onClick={() => setIsDetailsOpen(false)} disabled={isCancelling} className={canManage ? "" : "sm:col-span-3"}>
                   Fechar
                 </Button>
               </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isRescheduleOpen ? (
+        <div className="fixed inset-0 z-[75] grid place-items-end bg-black/78 px-4 py-4 backdrop-blur-sm md:place-items-center">
+          <section className="w-full max-w-xl rounded-[8px] border border-white/16 bg-[#070707] p-5 shadow-panel">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">Reagendar</p>
+            <h2 className="mt-2 text-xl font-black uppercase">{appointment.service}</h2>
+            <p className="mt-2 text-white/60">Barbeiro: {appointment.barber}</p>
+
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {dates.map((item) => (
+                <button key={item.value} type="button" onClick={() => setRescheduleDate(item.value)} className={cn("rounded-[8px] border px-4 py-4 text-center font-black uppercase transition", rescheduleDate === item.value ? "border-primary bg-primary text-black" : "border-white/14 bg-black/40 text-white")}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4">
+              {availableTimes.map((item) => (
+                <button key={item} type="button" onClick={() => setRescheduleTime(item)} className={cn("rounded-[8px] border px-4 py-4 font-black transition", rescheduleTime === item ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white")}>
+                  {item}
+                </button>
+              ))}
+            </div>
+
+            {actionError ? <p className="mt-5 rounded-[8px] border border-primary/50 p-3 text-sm text-primary">{actionError}</p> : null}
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <Button variant="outline" onClick={() => setIsRescheduleOpen(false)} disabled={isRescheduling}>Fechar</Button>
+              <Button onClick={confirmReschedule} disabled={isRescheduling}>{isRescheduling ? "Salvando..." : "Confirmar"}</Button>
             </div>
           </section>
         </div>

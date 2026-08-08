@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail, Phone, User } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail, Phone, User, X } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -27,6 +27,7 @@ const registerSchema = z
   });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
+type LegalDocument = "terms" | "privacy" | null;
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -34,9 +35,11 @@ export default function RegisterPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [legalDocument, setLegalDocument] = useState<LegalDocument>(null);
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting }
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema)
@@ -60,7 +63,10 @@ export default function RegisterPage() {
     if (error) {
       const message = error.message.toLowerCase();
       if (message.includes("already registered") || message.includes("already exists")) {
-        setFormError("Este e-mail já está cadastrado. Faça login para continuar.");
+        setError("email", {
+          type: "manual",
+          message: "Conta já existente, informe outro e-mail ou redefina a senha."
+        });
         return;
       }
       setFormError("Não foi possível criar sua conta agora. Verifique os dados e tente novamente.");
@@ -69,6 +75,14 @@ export default function RegisterPage() {
 
     if (!authData.user) {
       setFormError("Não foi possível criar sua conta agora. Tente novamente.");
+      return;
+    }
+
+    if (authData.user.identities?.length === 0) {
+      setError("email", {
+        type: "manual",
+        message: "Conta já existente, informe outro e-mail ou redefina a senha."
+      });
       return;
     }
 
@@ -124,7 +138,21 @@ export default function RegisterPage() {
           <label className="grid gap-3">
             <span className="font-bold">E-mail</span>
             <Input icon={<Mail className="h-5 w-5" />} placeholder="Digite seu e-mail" {...register("email")} />
-            {errors.email ? <span className="text-sm text-primary">{errors.email.message}</span> : null}
+            {errors.email ? (
+              <span className="text-sm text-primary">
+                {errors.email.message === "Conta já existente, informe outro e-mail ou redefina a senha." ? (
+                  <>
+                    Conta já existente, informe outro e-mail ou{" "}
+                    <Link href="/recuperar-senha" className="font-bold underline underline-offset-2">
+                      redefina a senha
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  errors.email.message
+                )}
+              </span>
+            ) : null}
           </label>
           <label className="grid gap-3">
             <span className="font-bold">Senha</span>
@@ -139,7 +167,7 @@ export default function RegisterPage() {
               placeholder="Digite sua senha"
               {...register("password")}
             />
-            <span className="text-sm text-white/55">Mínimo de 6 caracteres com letras e números.</span>
+            <span className="text-sm text-white/55">Mínimo de 6 caracteres, com letras, números ou caracteres especiais (!, @, #).</span>
             {errors.password ? <span className="text-sm text-primary">{errors.password.message}</span> : null}
           </label>
           <label className="grid gap-3">
@@ -169,13 +197,13 @@ export default function RegisterPage() {
           <Checkbox checked={accepted} onCheckedChange={setAccepted} />
           <p className="text-sm md:text-base">
             Aceito os{" "}
-            <a className="text-primary underline" href="#">
+            <button type="button" className="text-primary underline" onClick={() => setLegalDocument("terms")}>
               Termos de Uso
-            </a>{" "}
+            </button>{" "}
             e a{" "}
-            <a className="text-primary underline" href="#">
+            <button type="button" className="text-primary underline" onClick={() => setLegalDocument("privacy")}>
               Política de Privacidade
-            </a>
+            </button>
           </p>
         </div>
 
@@ -195,6 +223,43 @@ export default function RegisterPage() {
           <span className="h-px flex-1 bg-white/18" />
         </div>
       </form>
+      {legalDocument ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-5 backdrop-blur-sm" role="presentation" onMouseDown={() => setLegalDocument(null)}>
+          <section className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-[16px] border border-primary/30 bg-[#101010] p-6 shadow-panel md:p-8" role="dialog" aria-modal="true" aria-labelledby="legal-document-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <p className="text-sm font-bold uppercase tracking-[0.18em] text-primary">Renato Cortes Barbearia</p>
+                <h2 id="legal-document-title" className="mt-2 text-2xl font-black uppercase md:text-3xl">{legalDocument === "terms" ? "Termos de Uso" : "Política de Privacidade"}</h2>
+              </div>
+              <button type="button" onClick={() => setLegalDocument(null)} className="rounded-full p-2 text-white/70 transition hover:bg-white/10 hover:text-primary" aria-label="Fechar">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {legalDocument === "terms" ? <TermsOfUse /> : <PrivacyPolicy />}
+
+            <Button type="button" variant="outline" className="mt-8 w-full" onClick={() => setLegalDocument(null)}>Entendi</Button>
+          </section>
+        </div>
+      ) : null}
     </AuthLayout>
   );
+}
+
+function TermsOfUse() {
+  return <div className="mt-7 grid gap-5 text-sm leading-relaxed text-white/75">
+    <p>Ao criar uma conta, você concorda em fornecer informações verdadeiras e manter seus dados de acesso em segurança.</p>
+    <p>Os agendamentos estão sujeitos à disponibilidade da equipe. Cancelamentos e alterações devem ser solicitados com antecedência pelos canais disponibilizados pela barbearia.</p>
+    <p>Assinaturas, serviços e produtos seguem as condições, valores e benefícios informados no momento da contratação. A Renato Cortes Barbearia poderá atualizar estes termos para refletir mudanças em seus serviços.</p>
+    <p>O uso indevido da plataforma, incluindo tentativas de acesso não autorizado, poderá resultar no bloqueio da conta.</p>
+  </div>;
+}
+
+function PrivacyPolicy() {
+  return <div className="mt-7 grid gap-5 text-sm leading-relaxed text-white/75">
+    <p>Utilizamos seus dados de cadastro, como nome, e-mail e telefone, para criar sua conta, realizar agendamentos, prestar atendimento e comunicar informações sobre os serviços contratados.</p>
+    <p>Os dados são tratados com medidas de segurança e não são vendidos. Poderão ser compartilhados apenas quando necessários para a execução dos serviços, cumprimento de obrigações legais ou com seu consentimento.</p>
+    <p>Você pode solicitar a atualização, correção ou exclusão de dados, respeitadas as obrigações legais de retenção, pelos canais de atendimento da Renato Cortes Barbearia.</p>
+    <p>Ao continuar, você declara estar ciente deste tratamento de dados para as finalidades descritas acima.</p>
+  </div>;
 }
