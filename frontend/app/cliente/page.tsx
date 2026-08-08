@@ -99,7 +99,7 @@ export default async function ClientDashboardPage() {
       <section className="mt-10">
         <SectionTitle title="Próximo Agendamento" />
         {nextAppointment ? (
-          <AppointmentCard appointment={nextAppointment} detailed />
+          <AppointmentCard appointment={nextAppointment} />
         ) : (
           <div className="rounded-[8px] border border-white/14 bg-card p-7 text-center">
             <p className="text-lg font-bold">Você ainda não possui horários agendados.</p>

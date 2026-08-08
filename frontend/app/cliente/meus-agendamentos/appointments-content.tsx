@@ -124,7 +124,7 @@ export function AppointmentsContent({ appointments }: { appointments: Appointmen
         <div className="grid gap-5 md:grid-cols-2">
           {visible.map((appointment) => (
             <div key={appointment.id}>
-              <AppointmentCard appointment={appointment} />
+              <AppointmentCard appointment={appointment} canManage={appointment.isUpcoming} />
               {appointment.isUpcoming ? (
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <Button variant="outline" className="h-11 px-2 text-xs" disabled={isSubmitting} onClick={() => cancelAppointment(appointment.id)}>

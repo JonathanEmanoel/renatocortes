@@ -39,7 +39,7 @@ function weekDayFromDate(value: string) {
 
 export function SchedulingForm({ services, barbers, dates, availableTimes, availabilityByBarber }: SchedulingFormProps) {
   const [step, setStep] = useState(0);
-  const [serviceIds, setServiceIds] = useState<string[]>(services[0]?.id ? [services[0].id] : []);
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [barberId, setBarberId] = useState(barbers[0]?.id ?? "");
   const [date, setDate] = useState(dates[0]?.value ?? "");
   const [time, setTime] = useState(availableTimes[0] ?? "");
@@ -89,7 +89,7 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
   function toggleService(serviceId: string) {
     setServiceIds((current) => {
       if (current.includes(serviceId)) {
-        return current.length === 1 ? current : current.filter((id) => id !== serviceId);
+        return current.filter((id) => id !== serviceId);
       }
 
       return [...current, serviceId];
