@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  SUBSCRIPTION_BARBER_PERCENT,
+  SUBSCRIPTION_BUSINESS_PERCENT,
+  getFinanceMetrics,
+  hasActiveSubscriptionAt
+} from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export const dynamic = "force-dynamic";
@@ -28,9 +34,8 @@ export async function GET(request: Request) {
   const period = searchParams.get("period") ?? "WEEKLY";
   const { startDate, endDate } = getRange(period);
 
-  const [sales, paidExpenses, subscriptionAppointments] = await Promise.all([
-    prisma.sale.findMany({ where: { createdAt: { gte: startDate, lte: endDate }, deletedAt: null }, select: { totalValue: true } }),
-    prisma.expense.findMany({ where: { paidAt: { gte: startDate, lte: endDate }, deletedAt: null, status: "PAID" }, select: { amount: true } }),
+  const [metrics, subscriptionAppointments] = await Promise.all([
+    getFinanceMetrics(startDate, endDate),
     prisma.appointment.findMany({
       where: {
         dataHora: { gte: startDate, lte: endDate },
@@ -40,35 +45,36 @@ export async function GET(request: Request) {
       },
       include: {
         barber: { include: { user: true } },
-        client: { include: { subscriptions: { where: { active: true, deletedAt: null }, include: { subscriptionPlan: true } } } }
+        client: { include: { subscriptions: { include: { subscriptionPlan: true } } } }
       }
     })
   ]);
 
-  const grossRevenue = sales.reduce((sum, sale) => sum + Number(sale.totalValue), 0);
-  const expensesTotal = paidExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
   const subscriptionRevenueByClient = new Map<string, number>();
   const countsByBarber = new Map<string, { name: string; count: number }>();
 
   for (const appointment of subscriptionAppointments) {
-    const subscriptionValue = appointment.client.subscriptions[0]?.subscriptionPlan.value;
-    if (subscriptionValue) subscriptionRevenueByClient.set(appointment.clientId, Number(subscriptionValue));
+    const activeSubscription = appointment.client.subscriptions.find((subscription) => hasActiveSubscriptionAt([subscription], appointment.dataHora));
+    const subscriptionValue = activeSubscription?.subscriptionPlan.value;
+    if (!subscriptionValue) continue;
+    subscriptionRevenueByClient.set(appointment.clientId, Number(subscriptionValue));
     const current = countsByBarber.get(appointment.barberId) ?? { name: appointment.barber.user.name, count: 0 };
     countsByBarber.set(appointment.barberId, { ...current, count: current.count + 1 });
   }
 
   const subscriptionRevenue = Array.from(subscriptionRevenueByClient.values()).reduce((sum, value) => sum + value, 0);
-  const barberPool = subscriptionRevenue * 0.4;
+  const barberPool = subscriptionRevenue * (SUBSCRIPTION_BARBER_PERCENT / 100);
   const totalSubscriptionAppointments = Array.from(countsByBarber.values()).reduce((sum, item) => sum + item.count, 0);
 
   return NextResponse.json({
     period,
     startDate,
     endDate,
-    grossRevenue: grossRevenue + subscriptionRevenue,
-    expensesTotal,
-    netProfit: grossRevenue + subscriptionRevenue - expensesTotal,
-    businessShare: grossRevenue + subscriptionRevenue * 0.6,
+    grossRevenue: metrics.grossRevenue,
+    expensesTotal: metrics.paidExpenses,
+    netProfit: metrics.netProfit,
+    businessShare: metrics.grossRevenue - metrics.subscriptionBarberShare - metrics.productCost - metrics.productCommissions - metrics.manualServiceCommissions,
+    subscriptionBusinessShare: subscriptionRevenue * (SUBSCRIPTION_BUSINESS_PERCENT / 100),
     barberShare: barberPool,
     subscriptionDistribution: Array.from(countsByBarber.entries()).map(([barberId, item]) => ({
       barberId,

@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
+import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
@@ -75,8 +76,14 @@ export default async function AdminAppointmentsPage({ searchParams }: AdminAppoi
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
       <section className="mx-auto max-w-7xl">
-        <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Agenda</p>
-        <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Gestao de agendamentos</h1>
+        <InternalPageHeader
+          eyebrow="Agenda"
+          title="Gestao de agendamentos"
+          backHref="/admin"
+          backLabel="Painel administrativo"
+          role={session.user.role}
+          hasBarber={Boolean(session.user.barber?.id)}
+        />
 
         <form className="mt-8 grid gap-3 rounded-[12px] border border-primary/20 bg-card p-4 shadow-panel md:grid-cols-4" action="/admin/agendamentos">
           <select name="barberId" defaultValue={filters.barberId ?? "ALL"} className="min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none">

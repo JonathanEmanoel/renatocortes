@@ -37,7 +37,7 @@ export function StoreContent({ products, categories }: StoreContentProps) {
               category === item ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white/70"
             )}
           >
-            {item === "Oleos" ? "Óleos" : item === "Acessorios" ? "Acessórios" : item}
+            {item === "Oleos" ? "Óleos" : item === "Acessorios" ? "Acessórios" : item === "Maquinas" ? "Máquinas" : item}
           </button>
         ))}
       </div>

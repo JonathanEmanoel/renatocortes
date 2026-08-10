@@ -2,13 +2,15 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { redirect } from "next/navigation";
-import { BarChart3, CalendarDays, Clock, Scissors, Users } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, CalendarClock, CalendarDays, Clock, Scissors, Users } from "lucide-react";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { ManualProductSaleForm } from "@/components/internal/manual-product-sale-form";
 import { ManualServiceForm } from "@/components/internal/manual-service-form";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { SERVICE_COMMISSION_PERCENT, appointmentGross, hasActiveSubscriptionAt, productProfitCommission } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 function startOfWeek(date: Date) {
@@ -20,9 +22,7 @@ function startOfWeek(date: Date) {
 }
 
 function appointmentRevenue(appointment: { service: { price: unknown }; services?: { price: unknown }[] }) {
-  const services = appointment.services ?? [];
-  if (services.length > 0) return services.reduce((sum, service) => sum + Number(service.price), 0);
-  return Number(appointment.service.price);
+  return appointmentGross(appointment);
 }
 
 function appointmentServicesLabel(appointment: { service: { name: string }; services?: { service: { name: string } }[] }) {
@@ -72,9 +72,11 @@ export default async function BarberPanelPage() {
     todayClients,
     monthClients,
     commissions,
+    monthProductSales,
     weekAppointments,
     monthAppointments,
     upcomingAppointments,
+    availabilityDays,
     serviceOptions,
     productOptions
   ] = await Promise.all([
@@ -97,22 +99,30 @@ export default async function BarberPanelPage() {
       select: { clientId: true }
     }),
     prisma.employeeCommission.findMany({
-      where: { barberId, createdAt: { gte: monthStart } },
-      select: { amount: true }
+      where: { barberId, createdAt: { gte: monthStart }, appointmentId: null, saleId: null },
+      select: { amount: true, createdAt: true }
+    }),
+    prisma.sale.findMany({
+      where: { barberId, status: "COMPLETED", completedAt: { gte: monthStart, lt: monthEnd }, deletedAt: null },
+      include: { items: true }
     }),
     prisma.appointment.findMany({
-      where: { barberId, dataHora: { gte: weekStart }, deletedAt: null },
-      include: { service: true, services: true }
+      where: { barberId, dataHora: { gte: weekStart }, status: "COMPLETED", deletedAt: null },
+      include: { service: true, services: true, client: { include: { subscriptions: true } } }
     }),
     prisma.appointment.findMany({
-      where: { barberId, dataHora: { gte: last30Days }, deletedAt: null },
-      include: { service: true, services: true }
+      where: { barberId, dataHora: { gte: last30Days }, status: "COMPLETED", deletedAt: null },
+      include: { service: true, services: true, client: { include: { subscriptions: true } } }
     }),
     prisma.appointment.findMany({
       where: { barberId, dataHora: { gte: now }, status: { in: ["PENDING", "CONFIRMED"] }, deletedAt: null },
       include: { client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } }, service: true, services: { include: { service: true } } },
       orderBy: { dataHora: "asc" },
       take: 8
+    }),
+    prisma.barberAvailability.findMany({
+      where: { barberId, active: true, deletedAt: null },
+      orderBy: { weekDay: "asc" }
     }),
     prisma.service.findMany({
       where: { active: true, deletedAt: null },
@@ -124,9 +134,27 @@ export default async function BarberPanelPage() {
     })
   ]);
 
-  const commissionTotal = commissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
-  const weekRevenue = weekAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0);
-  const monthRevenue = monthAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0);
+  const manualServiceCommission = commissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
+  const weekManualServiceCommission = commissions
+    .filter((commission) => commission.createdAt >= weekStart)
+    .reduce((sum, commission) => sum + Number(commission.amount), 0);
+  const manualServiceGross = manualServiceCommission / (SERVICE_COMMISSION_PERCENT / 100);
+  const weekManualServiceGross = weekManualServiceCommission / (SERVICE_COMMISSION_PERCENT / 100);
+  const monthCommonAppointments = monthAppointments.filter((appointment) => !hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora));
+  const monthServiceRevenue = monthCommonAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0);
+  const monthProductGross = monthProductSales.reduce((sum, sale) => sum + Number(sale.totalValue), 0);
+  const monthProductCost = monthProductSales.reduce((sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.costPrice) * item.quantity, 0), 0);
+  const weekProductGross = monthProductSales
+    .filter((sale) => sale.completedAt && sale.completedAt >= weekStart)
+    .reduce((sum, sale) => sum + Number(sale.totalValue), 0);
+  const commissionTotal =
+    monthServiceRevenue * (SERVICE_COMMISSION_PERCENT / 100) +
+    productProfitCommission(monthProductGross, monthProductCost) +
+    manualServiceCommission;
+  const weekRevenue = weekAppointments
+    .filter((appointment) => !hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora))
+    .reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0) + weekManualServiceGross + weekProductGross;
+  const monthRevenue = monthServiceRevenue + monthProductGross + manualServiceGross;
   const series = dailySeries(monthAppointments);
   const maxSeriesValue = Math.max(...series.map((item) => item.count), 1);
   const nextAppointment = upcomingAppointments[0];
@@ -163,6 +191,32 @@ export default async function BarberPanelPage() {
             </article>
           ))}
         </div>
+
+        <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
+          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
+            <div className="flex min-w-0 gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[10px] border border-primary/30 bg-primary/10 text-primary">
+                <CalendarClock className="h-6 w-6" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-black uppercase tracking-[0.18em] text-primary">Minha agenda</p>
+                <h2 className="mt-1 text-2xl font-black uppercase">Gerenciar disponibilidade</h2>
+                <p className="mt-2 text-sm text-white/60">
+                  Defina os dias e horarios em que voce atende. Essas configuracoes aparecem para os clientes no agendamento.
+                </p>
+                <p className="mt-3 text-sm font-bold text-white/70">
+                  {availabilityDays.length} dia(s) ativo(s) nesta agenda
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/funcionario/disponibilidade"
+              className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-[10px] bg-primary px-5 text-sm font-black uppercase text-black transition hover:bg-primary/90"
+            >
+              Alterar disponibilidade
+            </Link>
+          </div>
+        </section>
 
         <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
           <div className="flex items-center gap-3">

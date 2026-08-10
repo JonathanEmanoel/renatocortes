@@ -8,6 +8,7 @@ import { AdminModuleNav } from "@/components/internal/admin-module-nav";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { getFinanceMetrics } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 function appointmentServicesLabel(appointment: { service: { name: string }; services: { service: { name: string } }[] }) {
@@ -28,16 +29,14 @@ export default async function AdminPanelPage() {
   const todayEnd = new Date(todayStart);
   todayEnd.setDate(todayEnd.getDate() + 1);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const dueSoonEnd = new Date(todayStart);
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
 
   const [
     todayAppointmentsCount,
-    todayIncome,
-    monthIncome,
-    monthCommissions,
-    monthSaleItems,
-    monthExpenses,
+    todayMetrics,
+    monthMetrics,
     pendingSalesCount,
     activeSubscriptions,
     pendingSubscriptionsCount,
@@ -47,11 +46,8 @@ export default async function AdminPanelPage() {
     operationalAppointments
   ] = await Promise.all([
     prisma.appointment.count({ where: { dataHora: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
-    prisma.financialTransaction.findMany({ where: { type: "INCOME", createdAt: { gte: todayStart, lt: todayEnd }, deletedAt: null }, select: { amount: true } }),
-    prisma.financialTransaction.findMany({ where: { type: "INCOME", createdAt: { gte: monthStart }, deletedAt: null }, select: { amount: true } }),
-    prisma.employeeCommission.findMany({ where: { createdAt: { gte: monthStart } }, select: { amount: true } }),
-    prisma.saleItem.findMany({ where: { sale: { status: "COMPLETED", completedAt: { gte: monthStart }, deletedAt: null } }, select: { costPrice: true, quantity: true } }),
-    prisma.expense.findMany({ where: { status: { in: ["PAID", "PENDING"] }, createdAt: { gte: monthStart }, deletedAt: null }, select: { amount: true } }),
+    getFinanceMetrics(todayStart, todayEnd),
+    getFinanceMetrics(monthStart, monthEnd),
     prisma.sale.count({ where: { status: "OPEN", deletedAt: null } }),
     prisma.subscription.count({ where: { status: "ACTIVE", deletedAt: null } }),
     prisma.subscription.count({ where: { status: "PENDING", deletedAt: null } }),
@@ -66,17 +62,11 @@ export default async function AdminPanelPage() {
     })
   ]);
 
-  const dailyRevenue = todayIncome.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-  const monthlyRevenue = monthIncome.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
-  const monthlyCommissions = monthCommissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
-  const monthlyProductCost = monthSaleItems.reduce((sum, item) => sum + Number(item.costPrice) * item.quantity, 0);
-  const monthlyExpenses = monthExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
-  const monthlyNetResult = monthlyRevenue - monthlyCommissions - monthlyProductCost - monthlyExpenses;
   const cards = [
     { label: "Agendamentos hoje", value: todayAppointmentsCount, icon: CalendarDays },
-    { label: "Faturamento bruto do dia", value: formatCurrency(dailyRevenue), icon: BarChart3 },
-    { label: "Faturamento bruto do mes", value: formatCurrency(monthlyRevenue), icon: BarChart3 },
-    { label: "Resultado liquido do mes", value: formatCurrency(monthlyNetResult), icon: BarChart3 },
+    { label: "Faturamento bruto do dia", value: formatCurrency(todayMetrics.grossRevenue), icon: BarChart3 },
+    { label: "Faturamento bruto do mes", value: formatCurrency(monthMetrics.grossRevenue), icon: BarChart3 },
+    { label: "Resultado liquido do mes", value: formatCurrency(monthMetrics.netProfit), icon: BarChart3 },
     { label: "Pedidos pendentes", value: pendingSalesCount, icon: Package },
     { label: "Assinaturas ativas", value: activeSubscriptions, icon: Crown },
     { label: "Assinaturas pendentes", value: pendingSubscriptionsCount, icon: Crown },

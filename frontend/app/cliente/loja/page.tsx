@@ -10,7 +10,7 @@ function mapCategory(name: string): ProductCategory {
   if (name === "Pomadas") return "Pomadas";
   if (name === "Shampoos") return "Shampoo";
   if (name === "Acessórios" || name === "Acessorios") return "Acessorios";
-  return "Todos";
+  return name || "Outros";
 }
 
 export default async function StorePage() {
@@ -24,8 +24,9 @@ export default async function StorePage() {
     id: product.id,
     name: product.name,
     price: formatCurrency(Number(product.price)),
-    description: product.description ?? "Produto Renato Cortes Barbearia.",
+    description: product.description ?? "",
     category: mapCategory(product.category.name),
+    image: product.image ?? undefined,
     stock: product.stock
   }));
 

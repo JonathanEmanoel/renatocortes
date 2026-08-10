@@ -12,7 +12,7 @@ const productSchema = z.object({
   price: z.number().min(0),
   costPrice: z.number().min(0).optional(),
   stock: z.number().int().min(0).max(9999),
-  image: z.string().trim().max(500).optional(),
+  image: z.string().trim().max(5000).optional(),
   active: z.boolean().default(true),
   visibleInStore: z.boolean().default(true)
 });

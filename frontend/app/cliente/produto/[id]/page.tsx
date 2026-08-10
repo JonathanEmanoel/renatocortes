@@ -22,7 +22,7 @@ function mapCategory(name: string): ProductCategory {
   if (name === "Pomadas") return "Pomadas";
   if (name === "Shampoos") return "Shampoo";
   if (name === "Acessórios" || name === "Acessorios") return "Acessorios";
-  return "Todos";
+  return name || "Outros";
 }
 
 export default async function ProductPage({ params }: ProductPageProps) {
@@ -52,8 +52,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
     id: item.id,
     name: item.name,
     price: formatCurrency(Number(item.price)),
-    description: item.description ?? "Produto Renato Cortes Barbearia.",
+    description: item.description ?? "",
     category: mapCategory(item.category.name),
+    image: item.image ?? undefined,
     stock: item.stock
   }));
 
@@ -66,14 +67,23 @@ export default async function ProductPage({ params }: ProductPageProps) {
       </Link>
 
       <section className="mt-6 grid gap-7 lg:grid-cols-[1fr_0.9fr]">
-        <div className="grid aspect-square place-items-center rounded-[8px] border border-white/14 bg-gradient-to-br from-[#1b120d] via-black to-[#070707]">
-          <ShoppingBag className="h-28 w-28 text-primary" />
-        </div>
+        {product.image ? (
+          <div
+            aria-label={product.name}
+            className="aspect-square rounded-[8px] border border-white/14 bg-cover bg-center shadow-panel"
+            role="img"
+            style={{ backgroundImage: `url("${product.image}")` }}
+          />
+        ) : (
+          <div className="grid aspect-square place-items-center rounded-[8px] border border-white/14 bg-gradient-to-br from-[#1b120d] via-black to-[#070707]">
+            <ShoppingBag className="h-28 w-28 text-primary" />
+          </div>
+        )}
         <div className="rounded-[8px] border border-white/14 bg-card p-6">
           <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">{product.category.name}</p>
           <h1 className="mt-4 text-3xl font-black uppercase md:text-5xl">{product.name}</h1>
           <p className="mt-5 text-3xl font-black text-primary">{product.stock > 0 ? price : "Esgotado"}</p>
-          <p className="mt-6 leading-relaxed text-white/68">{product.description ?? "Produto Renato Cortes Barbearia."}</p>
+          {product.description ? <p className="mt-6 leading-relaxed text-white/68">{product.description}</p> : null}
           <p className="mt-4 text-sm font-bold uppercase tracking-[0.12em] text-white/55">
             Estoque disponível: {product.stock}
           </p>

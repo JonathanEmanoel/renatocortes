@@ -29,6 +29,72 @@ const registerSchema = z
 type RegisterFormData = z.infer<typeof registerSchema>;
 type LegalDocument = "terms" | "privacy" | null;
 
+function getConfirmationRedirectUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_AUTH_REDIRECT_URL;
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return undefined;
+  }
+
+  return `${window.location.origin}/auth/redirect`;
+}
+
+function getFriendlySignUpError(error: { message: string; status?: number; name?: string; code?: string }) {
+  const { message, status, name, code } = error;
+  const normalized = message.toLowerCase();
+
+  if (
+    status === 500 ||
+    normalized === "{}" ||
+    normalized.includes("confirmation email") ||
+    normalized.includes("unexpected_failure") ||
+    name === "AuthRetryableFetchError" ||
+    code === "unexpected_failure"
+  ) {
+    return {
+      field: null,
+      message:
+        "Sua conta não pôde ser criada porque o Supabase não conseguiu enviar o e-mail de confirmação agora. Avise a barbearia para verificar o envio de e-mails e tente novamente."
+    };
+  }
+
+  if (normalized.includes("already registered") || normalized.includes("already exists")) {
+    return {
+      field: "email" as const,
+      message: "Conta já existente, informe outro e-mail ou redefina a senha."
+    };
+  }
+
+  if (normalized.includes("password")) {
+    return {
+      field: "password" as const,
+      message: "Essa senha não foi aceita. Use pelo menos 6 caracteres e misture letras com números. Se possível, inclua um caractere especial."
+    };
+  }
+
+  if (normalized.includes("redirect") || normalized.includes("url")) {
+    return {
+      field: null,
+      message: "Não foi possível enviar o e-mail de confirmação porque a URL de retorno não está liberada no Supabase. Avise a barbearia ou tente novamente."
+    };
+  }
+
+  if (normalized.includes("rate limit") || normalized.includes("too many")) {
+    return {
+      field: null,
+      message: "Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente."
+    };
+  }
+
+  return {
+    field: null,
+    message: "Não foi possível criar sua conta agora. Verifique os dados e tente novamente."
+  };
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [accepted, setAccepted] = useState(false);
@@ -48,28 +114,31 @@ export default function RegisterPage() {
   async function onSubmit(data: RegisterFormData) {
     setFormError(null);
     const supabase = createClient();
+    const confirmationRedirectUrl = getConfirmationRedirectUrl();
 
     const { data: authData, error } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
+        ...(confirmationRedirectUrl ? { emailRedirectTo: confirmationRedirectUrl } : {}),
         data: {
           name: data.name,
-          phone: data.phone
+          phone: data.phone,
+          brand: "Renato Cortes Barbearia"
         }
       }
     });
 
     if (error) {
-      const message = error.message.toLowerCase();
-      if (message.includes("already registered") || message.includes("already exists")) {
-        setError("email", {
+      const friendlyError = getFriendlySignUpError(error);
+      if (friendlyError.field) {
+        setError(friendlyError.field, {
           type: "manual",
-          message: "Conta já existente, informe outro e-mail ou redefina a senha."
+          message: friendlyError.message
         });
         return;
       }
-      setFormError("Não foi possível criar sua conta agora. Verifique os dados e tente novamente.");
+      setFormError(friendlyError.message);
       return;
     }
 

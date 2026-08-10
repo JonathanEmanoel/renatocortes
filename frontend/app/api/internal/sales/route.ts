@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/server/audit";
+import { PRODUCT_PROFIT_COMMISSION_PERCENT, productProfitCommission } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const requestSchema = z.object({
@@ -31,6 +32,20 @@ function canRegisterOwnSale(role: string) {
   return role === "BARBER" || role === "ADMIN";
 }
 
+function resolveResponsibleBarberId({
+  role,
+  sessionBarberId,
+  requestedBarberId
+}: {
+  role: string;
+  sessionBarberId?: string;
+  requestedBarberId?: string;
+}) {
+  if (role === "BARBER") return sessionBarberId;
+  if (canManageSales(role)) return requestedBarberId ?? sessionBarberId;
+  return sessionBarberId;
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getAuthenticatedUser();
@@ -41,9 +56,11 @@ export async function POST(request: Request) {
     const payload = manualSaleSchema.safeParse(await request.json());
     if (!payload.success) return NextResponse.json({ message: "Confira os dados da venda." }, { status: 400 });
 
-    const barberId = canManageSales(session.user.role)
-      ? payload.data.barberId ?? session.user.barber?.id
-      : session.user.barber?.id;
+    const barberId = resolveResponsibleBarberId({
+      role: session.user.role,
+      sessionBarberId: session.user.barber?.id,
+      requestedBarberId: payload.data.barberId
+    });
 
     if (!barberId) {
       return NextResponse.json({ message: "Seu usuario nao possui barbeiro vinculado para registrar venda presencial." }, { status: 400 });
@@ -76,9 +93,8 @@ export async function POST(request: Request) {
     });
     const totalValue = items.reduce((sum, item) => sum + item.subtotal, 0);
     const totalCost = items.reduce((sum, item) => sum + Number(item.product.costPrice) * item.quantity, 0);
-    const profit = Math.max(0, totalValue - totalCost);
-    const commissionPercent = Number(barber.productCommissionPercent);
-    const commissionAmount = profit * (commissionPercent / 100);
+    const commissionPercent = PRODUCT_PROFIT_COMMISSION_PERCENT;
+    const commissionAmount = productProfitCommission(totalValue, totalCost);
 
     const sale = await prisma.$transaction(async (tx) => {
       const created = await tx.sale.create({
@@ -188,6 +204,9 @@ export async function PATCH(request: Request) {
       }
     }
 
+    const totalCost = sale.items.reduce((sum, item) => sum + Number(item.costPrice) * item.quantity, 0);
+    const commissionAmount = sale.barberId ? productProfitCommission(Number(sale.totalValue), totalCost) : 0;
+
     const completed = await prisma.$transaction(async (tx) => {
       for (const item of sale.items) {
         await tx.product.update({
@@ -211,6 +230,17 @@ export async function PATCH(request: Request) {
           description: `Venda de produtos ${sale.id}`
         }
       });
+
+      if (sale.barberId && commissionAmount > 0) {
+        await tx.employeeCommission.create({
+          data: {
+            barberId: sale.barberId,
+            saleId: sale.id,
+            amount: commissionAmount,
+            percentage: PRODUCT_PROFIT_COMMISSION_PERCENT.toFixed(2)
+          }
+        });
+      }
 
       return tx.sale.update({
         where: { id: sale.id },

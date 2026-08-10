@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/server/audit";
+import { SERVICE_COMMISSION_PERCENT, hasActiveSubscriptionAt } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const requestSchema = z.object({
@@ -38,7 +39,8 @@ export async function PATCH(request: Request) {
       include: {
         service: true,
         services: { include: { service: true } },
-        barber: { include: { user: true } }
+        barber: { include: { user: true } },
+        client: { include: { subscriptions: true } }
       }
     });
 
@@ -77,23 +79,24 @@ export async function PATCH(request: Request) {
         : [{ service: appointment.service, price: appointment.service.price }];
       const appointmentTotal = appointmentServices.reduce((sum, item) => sum + Number(item.price), 0);
       const serviceNames = appointmentServices.map((item) => item.service.name).join(" + ");
-      const commissionValue = appointmentTotal * 0.5;
+      const isSubscriptionAppointment = hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora);
+      const commissionValue = appointmentTotal * (SERVICE_COMMISSION_PERCENT / 100);
       const existingCommission = await prisma.employeeCommission.findFirst({
         where: { appointmentId: appointment.id, barberId: appointment.barberId }
       });
 
-      if (!existingCommission) {
+      if (!isSubscriptionAppointment && !existingCommission) {
         await prisma.employeeCommission.create({
           data: {
             barberId: appointment.barberId,
             appointmentId: appointment.id,
-            percentage: "50.00",
+            percentage: SERVICE_COMMISSION_PERCENT.toFixed(2),
             amount: commissionValue
           }
         }).catch(() => null);
       }
 
-      await prisma.financialTransaction.create({
+      if (!isSubscriptionAppointment) await prisma.financialTransaction.create({
         data: {
           type: "INCOME",
           amount: appointmentTotal,

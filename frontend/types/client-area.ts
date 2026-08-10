@@ -6,7 +6,7 @@ export type Client = {
   phone: string;
 };
 
-export type ProductCategory = "Todos" | "Pomadas" | "Oleos" | "Shampoo" | "Acessorios";
+export type ProductCategory = "Todos" | string;
 
 export type Product = {
   id: string;
@@ -14,6 +14,7 @@ export type Product = {
   price: string;
   description: string;
   category: ProductCategory;
+  image?: string;
   stock?: number;
 };
 
