@@ -49,7 +49,7 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
 
     if (params.get("registered") === "check-email") {
-      setFormError("Conta criada. Confirme seu e-mail antes de entrar.");
+      setFormError("Conta criada com sucesso. Enviamos um e-mail da Renato Cortes Barbearia para confirmar sua conta. Depois de confirmar, volte aqui e faça login.");
     }
 
     if (params.get("password") === "updated") {

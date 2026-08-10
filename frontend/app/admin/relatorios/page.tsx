@@ -6,6 +6,7 @@ import { Download } from "lucide-react";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { getFinanceMetrics } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export default async function AdminReportsPage() {
@@ -14,19 +15,36 @@ export default async function AdminReportsPage() {
   if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
 
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const [sales, expenses, servicesRanking, productsRanking, allServices, allProducts] = await Promise.all([
-    prisma.sale.findMany({ where: { createdAt: { gte: monthStart }, status: "COMPLETED", deletedAt: null }, select: { totalValue: true } }),
-    prisma.expense.findMany({ where: { createdAt: { gte: monthStart }, deletedAt: null }, select: { amount: true } }),
-    prisma.appointment.groupBy({ by: ["serviceId"], where: { createdAt: { gte: monthStart }, deletedAt: null }, _count: { _all: true }, orderBy: { _count: { serviceId: "desc" } }, take: 8 }),
-    prisma.saleItem.groupBy({ by: ["productId"], where: { sale: { createdAt: { gte: monthStart }, deletedAt: null } }, _sum: { quantity: true }, orderBy: { _sum: { quantity: "desc" } }, take: 8 }),
-    prisma.service.findMany({ where: { deletedAt: null }, select: { id: true, name: true } }),
+  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+  const [metrics, completedAppointments, productsRanking, allProducts] = await Promise.all([
+    getFinanceMetrics(monthStart, monthEnd),
+    prisma.appointment.findMany({
+      where: { dataHora: { gte: monthStart, lt: monthEnd }, status: "COMPLETED", deletedAt: null },
+      include: { service: true, services: { include: { service: true } } }
+    }),
+    prisma.saleItem.groupBy({
+      by: ["productId"],
+      where: { sale: { status: "COMPLETED", completedAt: { gte: monthStart, lt: monthEnd }, deletedAt: null } },
+      _sum: { quantity: true },
+      orderBy: { _sum: { quantity: "desc" } },
+      take: 8
+    }),
     prisma.product.findMany({ where: { deletedAt: null }, select: { id: true, name: true } })
   ]);
 
-  const serviceById = new Map(allServices.map((service) => [service.id, service.name]));
   const productById = new Map(allProducts.map((product) => [product.id, product.name]));
-  const revenue = sales.reduce((sum, sale) => sum + Number(sale.totalValue), 0);
-  const expenseTotal = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+  const serviceCounts = new Map<string, { name: string; count: number }>();
+  for (const appointment of completedAppointments) {
+    const services = appointment.services.length ? appointment.services.map((item) => item.service) : [appointment.service];
+    for (const service of services) {
+      const current = serviceCounts.get(service.id) ?? { name: service.name, count: 0 };
+      serviceCounts.set(service.id, { ...current, count: current.count + 1 });
+    }
+  }
+  const servicesRanking = Array.from(serviceCounts.entries())
+    .map(([serviceId, item]) => ({ serviceId, ...item }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
@@ -50,7 +68,7 @@ export default async function AdminReportsPage() {
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {[["Receita do mes", revenue], ["Despesas do mes", expenseTotal], ["Lucro liquido", revenue - expenseTotal]].map(([label, value]) => (
+          {[["Receita do mes", metrics.grossRevenue], ["Despesas pagas do mes", metrics.paidExpenses], ["Lucro liquido", metrics.netProfit]].map(([label, value]) => (
             <article key={String(label)} className="rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
               <p className="text-sm uppercase text-white/55">{label}</p>
               <strong className="mt-2 block text-3xl text-primary">{formatCurrency(Number(value))}</strong>
@@ -65,8 +83,8 @@ export default async function AdminReportsPage() {
               {servicesRanking.length === 0 ? <p className="text-white/65">Nenhum servico no periodo.</p> : null}
               {servicesRanking.map((item) => (
                 <div key={item.serviceId} className="flex items-center justify-between rounded-[10px] border border-white/10 bg-black/30 p-4">
-                  <span>{serviceById.get(item.serviceId) ?? item.serviceId}</span>
-                  <strong className="text-primary">{item._count._all}</strong>
+                  <span>{item.name}</span>
+                  <strong className="text-primary">{item.count}</strong>
                 </div>
               ))}
             </div>

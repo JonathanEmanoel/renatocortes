@@ -6,17 +6,29 @@ import { BarChart3, Scissors, Users } from "lucide-react";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import {
+  SERVICE_COMMISSION_PERCENT,
+  SUBSCRIPTION_BARBER_PERCENT,
+  appointmentGross,
+  getSubscriptionRevenueForPeriod,
+  hasActiveSubscriptionAt,
+  productProfitCommission
+} from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+
+function startOfWeek(date: Date) {
+  const next = new Date(date);
+  const day = next.getDay() || 7;
+  next.setDate(next.getDate() - day + 1);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
 
 function startOfRange(days: number) {
   const date = new Date();
   date.setDate(date.getDate() - days);
   date.setHours(0, 0, 0, 0);
   return date;
-}
-
-function appointmentTotal(appointment: { service: { price: unknown }; services: { price: unknown }[] }) {
-  return appointment.services.length ? appointment.services.reduce((sum, item) => sum + Number(item.price), 0) : Number(appointment.service.price);
 }
 
 export default async function AdminTeamPage() {
@@ -26,7 +38,7 @@ export default async function AdminTeamPage() {
 
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const fortnightStart = startOfRange(14);
-  const weekStart = startOfRange(7);
+  const weekStart = startOfWeek(new Date());
 
   const barbers = await prisma.barber.findMany({
     where: { active: true, deletedAt: null },
@@ -34,10 +46,18 @@ export default async function AdminTeamPage() {
       user: true,
       appointments: {
         where: { status: "COMPLETED", deletedAt: null, dataHora: { gte: monthStart } },
-        include: { service: true, services: true, client: { include: { subscriptions: true } } }
+        include: {
+          service: true,
+          services: true,
+          client: { include: { subscriptions: true } }
+        }
+      },
+      sales: {
+        where: { status: "COMPLETED", completedAt: { gte: monthStart }, deletedAt: null },
+        include: { items: true }
       },
       commissions: {
-        where: { createdAt: { gte: monthStart } }
+        where: { createdAt: { gte: monthStart }, appointmentId: null, saleId: null }
       }
     },
     orderBy: { user: { name: "asc" } }
@@ -48,6 +68,9 @@ export default async function AdminTeamPage() {
     { label: "Quinzena", start: fortnightStart },
     { label: "Mes", start: monthStart }
   ];
+  const subscriptionRevenueByRange = new Map(
+    await Promise.all(ranges.map(async (range) => [range.label, await getSubscriptionRevenueForPeriod(range.start, new Date())] as const))
+  );
 
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
@@ -75,12 +98,35 @@ export default async function AdminTeamPage() {
               <div className="mt-5 grid gap-4 md:grid-cols-3">
                 {ranges.map((range) => {
                   const appointments = barber.appointments.filter((appointment) => appointment.dataHora >= range.start);
-                  const gross = appointments.reduce((sum, appointment) => sum + appointmentTotal(appointment), 0);
+                  const commonAppointments = appointments.filter((appointment) => !hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora));
+                  const subscriberAppointments = appointments.filter((appointment) => hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora)).length;
+                  const totalSubscriberAppointments = barbers.reduce((sum, currentBarber) => {
+                    return (
+                      sum +
+                      currentBarber.appointments.filter(
+                        (appointment) => appointment.dataHora >= range.start && hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora)
+                      ).length
+                    );
+                  }, 0);
+                  const serviceGross = commonAppointments.reduce((sum, appointment) => sum + appointmentGross(appointment), 0);
+                  const sales = barber.sales.filter((sale) => sale.completedAt && sale.completedAt >= range.start);
+                  const productGross = sales.reduce((sum, sale) => sum + Number(sale.totalValue), 0);
+                  const productCost = sales.reduce(
+                    (sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.costPrice) * item.quantity, 0),
+                    0
+                  );
                   const commissions = barber.commissions.filter((commission) => commission.createdAt >= range.start);
-                  const net = commissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
-                  const subscriberAppointments = appointments.filter((appointment) =>
-                    appointment.client.subscriptions.some((subscription) => subscription.active && (!subscription.endDate || subscription.endDate >= appointment.dataHora))
-                  ).length;
+                  const manualServiceCommission = commissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
+                  const manualServiceGross = manualServiceCommission / (SERVICE_COMMISSION_PERCENT / 100);
+                  const subscriptionBarberPool = (subscriptionRevenueByRange.get(range.label) ?? 0) * (SUBSCRIPTION_BARBER_PERCENT / 100);
+                  const subscriptionCommission =
+                    totalSubscriberAppointments > 0 ? subscriptionBarberPool * (subscriberAppointments / totalSubscriberAppointments) : 0;
+                  const gross = serviceGross + productGross + manualServiceGross;
+                  const net =
+                    serviceGross * (SERVICE_COMMISSION_PERCENT / 100) +
+                    productProfitCommission(productGross, productCost) +
+                    manualServiceCommission +
+                    subscriptionCommission;
                   return (
                     <div key={range.label} className="rounded-[10px] border border-white/10 bg-black/30 p-4">
                       <p className="text-sm font-black uppercase text-primary">{range.label}</p>

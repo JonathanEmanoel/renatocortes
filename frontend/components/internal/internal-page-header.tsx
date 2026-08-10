@@ -28,10 +28,12 @@ export function InternalPageHeader({ eyebrow, title, backHref, backLabel, role, 
         </div>
 
         <nav className="flex flex-wrap gap-2">
-          <Link className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-white/10 bg-black/30 px-4 text-sm font-black uppercase text-white/75 transition hover:border-primary/50 hover:text-primary" href="/admin">
-            <LayoutDashboard className="h-4 w-4" />
-            Painel
-          </Link>
+          {canOpenAdmin ? (
+            <Link className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-white/10 bg-black/30 px-4 text-sm font-black uppercase text-white/75 transition hover:border-primary/50 hover:text-primary" href="/admin">
+              <LayoutDashboard className="h-4 w-4" />
+              Painel
+            </Link>
+          ) : null}
           <Link className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-white/10 bg-black/30 px-4 text-sm font-black uppercase text-white/75 transition hover:border-primary/50 hover:text-primary" href={role === "CLIENT" ? "/cliente/perfil" : role === "BARBER" ? "/funcionario/perfil" : "/admin/perfil"}>
             <UserRound className="h-4 w-4" />
             Perfil
