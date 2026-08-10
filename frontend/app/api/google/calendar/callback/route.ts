@@ -50,7 +50,7 @@ export async function GET(request: Request) {
       buildCalendarEvent({
         serviceName: services.map((item) => item.service.name).join(" + "),
         barberName: appointment.barber.user.name,
-        barbershopPhone: appointment.barber.user.phone ?? "+55 81 99586-4757",
+        barbershopPhone: appointment.barber.user.phone ?? "+55 81 99720-7222",
         start: appointment.dataHora,
         durationMinutes: services.reduce((sum, item) => sum + item.duration, 0)
       })

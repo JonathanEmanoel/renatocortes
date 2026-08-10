@@ -235,7 +235,7 @@ export async function POST(request: Request) {
     const calendarEvent = buildCalendarEvent({
       serviceName: serviceNames,
       barberName: created.barber.user.name,
-      barbershopPhone: created.barber.user.phone ?? "+55 81 99586-4757",
+      barbershopPhone: created.barber.user.phone ?? "+55 81 99720-7222",
       start: created.dataHora,
       durationMinutes: validation.totalDuration
     });

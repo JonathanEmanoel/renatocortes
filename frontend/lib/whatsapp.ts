@@ -1,4 +1,4 @@
-const BARBERSHOP_WHATSAPP = "5581995864757";
+const BARBERSHOP_WHATSAPP = "5581997207222";
 
 export function normalizeBrazilianWhatsApp(phone?: string | null) {
   const digits = phone?.replace(/\D/g, "") ?? "";
