@@ -22,7 +22,6 @@ export function BarberCard({ barber, selected, onClick }: BarberCardProps) {
       <Avatar name={barber.name} className="h-14 w-14" />
       <div className="min-w-0 flex-1">
         <h3 className="font-black uppercase">{barber.name}</h3>
-        <p className="mt-1 text-sm text-white/58">{barber.specialty}</p>
       </div>
       <User className="h-5 w-5 text-primary/55" />
     </button>
