@@ -27,7 +27,7 @@ const deleteSchema = z.object({
 });
 
 function canManageBusiness(role: string) {
-  return role === "ADMIN" || role === "DEVELOPER";
+  return role === "ADMIN" || role === "DEVELOPER" || role === "BARBER";
 }
 
 export async function POST(request: Request) {
@@ -70,7 +70,7 @@ export async function PATCH(request: Request) {
   try {
     const session = await getAuthenticatedUser();
 
-    if (!session || session.user.role === "CLIENT") {
+    if (!session || !canManageBusiness(session.user.role)) {
       return NextResponse.json({ message: "Acesso não autorizado." }, { status: 403 });
     }
 
@@ -150,7 +150,7 @@ export async function DELETE(request: Request) {
 
     const product = await prisma.product.update({
       where: { id: payload.data.productId },
-      data: { active: false, deletedAt: null }
+      data: { active: false, deletedAt: new Date() }
     });
 
     await createAuditLog({ userId: session.user.id, action: "DELETE_PRODUCT", entity: "Product", entityId: product.id });

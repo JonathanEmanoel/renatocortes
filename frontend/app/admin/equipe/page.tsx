@@ -2,74 +2,38 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { redirect } from "next/navigation";
-import { BarChart3, Scissors, Users } from "lucide-react";
+import Link from "next/link";
+import { BarChart3, FileText, Scissors, Users } from "lucide-react";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
-import {
-  SERVICE_COMMISSION_PERCENT,
-  SUBSCRIPTION_BARBER_PERCENT,
-  appointmentGross,
-  getSubscriptionRevenueForPeriod,
-  hasActiveSubscriptionAt,
-  productProfitCommission
-} from "@/lib/server/finance-rules";
+import { getBarberFinancialSummary } from "@/lib/server/barber-report";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
-
-function startOfWeek(date: Date) {
-  const next = new Date(date);
-  const day = next.getDay() || 7;
-  next.setDate(next.getDate() - day + 1);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function startOfRange(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
 
 export default async function AdminTeamPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/equipe");
   if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
 
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const fortnightStart = startOfRange(14);
-  const weekStart = startOfWeek(new Date());
-
   const barbers = await prisma.barber.findMany({
     where: { active: true, deletedAt: null },
     include: {
-      user: true,
-      appointments: {
-        where: { status: "COMPLETED", deletedAt: null, dataHora: { gte: monthStart } },
-        include: {
-          service: true,
-          services: true,
-          client: { include: { subscriptions: true } }
-        }
-      },
-      sales: {
-        where: { status: "COMPLETED", completedAt: { gte: monthStart }, deletedAt: null },
-        include: { items: true }
-      },
-      commissions: {
-        where: { createdAt: { gte: monthStart }, appointmentId: null, saleId: null }
-      }
+      user: true
     },
     orderBy: { user: { name: "asc" } }
   });
 
   const ranges = [
-    { label: "Semana", start: weekStart },
-    { label: "Quinzena", start: fortnightStart },
-    { label: "Mes", start: monthStart }
+    { label: "Semana", period: "week-current" },
+    { label: "Quinzena", period: "fortnight-current" },
+    { label: "Mes", period: "month-current" }
   ];
-  const subscriptionRevenueByRange = new Map(
-    await Promise.all(ranges.map(async (range) => [range.label, await getSubscriptionRevenueForPeriod(range.start, new Date())] as const))
+  const summaries = new Map(
+    await Promise.all(
+      barbers.flatMap((barber) =>
+        ranges.map(async (range) => [`${barber.id}:${range.period}`, await getBarberFinancialSummary({ barberId: barber.id, period: range.period })] as const)
+      )
+    )
   );
 
   return (
@@ -93,40 +57,23 @@ export default async function AdminTeamPage() {
                   <h2 className="text-2xl font-black uppercase">{barber.user.name}</h2>
                   <p className="mt-1 text-sm text-white/55">{barber.specialty ?? "Profissional Renato Cortes"}</p>
                 </div>
-                <Scissors className="h-8 w-8 text-primary" />
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={`/admin/equipe/relatorio?barberId=${barber.id}&period=month-current`}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Relatorio detalhado
+                  </Link>
+                  <Scissors className="h-8 w-8 text-primary" />
+                </div>
               </div>
               <div className="mt-5 grid gap-4 md:grid-cols-3">
                 {ranges.map((range) => {
-                  const appointments = barber.appointments.filter((appointment) => appointment.dataHora >= range.start);
-                  const commonAppointments = appointments.filter((appointment) => !hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora));
-                  const subscriberAppointments = appointments.filter((appointment) => hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora)).length;
-                  const totalSubscriberAppointments = barbers.reduce((sum, currentBarber) => {
-                    return (
-                      sum +
-                      currentBarber.appointments.filter(
-                        (appointment) => appointment.dataHora >= range.start && hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora)
-                      ).length
-                    );
-                  }, 0);
-                  const serviceGross = commonAppointments.reduce((sum, appointment) => sum + appointmentGross(appointment), 0);
-                  const sales = barber.sales.filter((sale) => sale.completedAt && sale.completedAt >= range.start);
-                  const productGross = sales.reduce((sum, sale) => sum + Number(sale.totalValue), 0);
-                  const productCost = sales.reduce(
-                    (sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.costPrice) * item.quantity, 0),
-                    0
-                  );
-                  const commissions = barber.commissions.filter((commission) => commission.createdAt >= range.start);
-                  const manualServiceCommission = commissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
-                  const manualServiceGross = manualServiceCommission / (SERVICE_COMMISSION_PERCENT / 100);
-                  const subscriptionBarberPool = (subscriptionRevenueByRange.get(range.label) ?? 0) * (SUBSCRIPTION_BARBER_PERCENT / 100);
-                  const subscriptionCommission =
-                    totalSubscriberAppointments > 0 ? subscriptionBarberPool * (subscriberAppointments / totalSubscriberAppointments) : 0;
-                  const gross = serviceGross + productGross + manualServiceGross;
-                  const net =
-                    serviceGross * (SERVICE_COMMISSION_PERCENT / 100) +
-                    productProfitCommission(productGross, productCost) +
-                    manualServiceCommission +
-                    subscriptionCommission;
+                  const financial = summaries.get(`${barber.id}:${range.period}`);
+                  const gross = financial?.summary.grossProduced ?? 0;
+                  const net = financial?.summary.totalCommission ?? 0;
+                  const subscriberAppointments = financial?.summary.subscriptionBarberAppointments ?? 0;
                   return (
                     <div key={range.label} className="rounded-[10px] border border-white/10 bg-black/30 p-4">
                       <p className="text-sm font-black uppercase text-primary">{range.label}</p>

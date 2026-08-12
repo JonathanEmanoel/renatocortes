@@ -7,7 +7,7 @@ const BUCKET = "product-images";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 function canManageProducts(role: string) {
-  return role === "ADMIN" || role === "DEVELOPER";
+  return role === "ADMIN" || role === "DEVELOPER" || role === "BARBER";
 }
 
 function fileExtension(file: File) {

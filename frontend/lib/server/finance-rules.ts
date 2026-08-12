@@ -28,6 +28,15 @@ export function productProfitCommission(gross: number, cost: number) {
   return Math.max(0, gross - cost) * (PRODUCT_PROFIT_COMMISSION_PERCENT / 100);
 }
 
+export function productItemsCommission(
+  items: { quantity: number; price: unknown; costPrice: unknown; product?: { visibleInStore: boolean } | null }[]
+) {
+  const commissionableItems = items.filter((item) => item.product?.visibleInStore !== false);
+  const gross = commissionableItems.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0);
+  const cost = commissionableItems.reduce((sum, item) => sum + Number(item.costPrice) * item.quantity, 0);
+  return productProfitCommission(gross, cost);
+}
+
 export function hasActiveSubscriptionAt(subscriptions: SubscriptionLike[], date: Date) {
   return subscriptions.some((subscription) => {
     if (!subscription.active || subscription.status !== "ACTIVE" || subscription.deletedAt) return false;
@@ -62,7 +71,7 @@ export async function getFinanceMetrics(startDate: Date, endDate: Date) {
     }),
     prisma.sale.findMany({
       where: { status: "COMPLETED", completedAt: { gte: startDate, lte: endDate }, deletedAt: null },
-      include: { items: true }
+      include: { items: { include: { product: true } } }
     }),
     prisma.employeeCommission.findMany({
       where: { createdAt: { gte: startDate, lte: endDate }, appointmentId: null, saleId: null },
@@ -79,9 +88,7 @@ export async function getFinanceMetrics(startDate: Date, endDate: Date) {
   );
   const productCommissions = completedSales.reduce((sum, sale) => {
     if (!sale.barberId) return sum;
-    const gross = Number(sale.totalValue);
-    const cost = sale.items.reduce((itemSum, item) => itemSum + Number(item.costPrice) * item.quantity, 0);
-    return sum + productProfitCommission(gross, cost);
+    return sum + productItemsCommission(sale.items);
   }, 0);
   const manualServiceCommissions = manualCommissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
   const subscriptionBarberShare = subscriptionRevenue * (SUBSCRIPTION_BARBER_PERCENT / 100);

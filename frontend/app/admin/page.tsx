@@ -3,7 +3,7 @@ export const revalidate = 0;
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, BarChart3, CalendarDays, Crown, Package, Settings, Users } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarDays, Crown, Package, Settings, ShieldAlert, Users } from "lucide-react";
 import { AdminModuleNav } from "@/components/internal/admin-module-nav";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
 import { formatCurrency } from "@/lib/format";
@@ -100,6 +100,16 @@ export default async function AdminPanelPage() {
         </div>
 
         <AdminModuleNav />
+
+        {session.user.role === "DEVELOPER" ? (
+          <Link href="/internal/manutencao" className="mt-6 flex rounded-[12px] border border-red-500/35 bg-red-500/10 p-5 text-red-100 shadow-panel transition hover:border-red-300 hover:bg-red-500/15">
+            <ShieldAlert className="mr-4 h-7 w-7 shrink-0" />
+            <span>
+              <strong className="block text-lg font-black uppercase">Manutencao do sistema</strong>
+              <span className="mt-1 block text-sm text-white/65">Area restrita ao desenvolvedor. Permite ocultar ou excluir dados de teste com preview e confirmacao forte.</span>
+            </span>
+          </Link>
+        ) : null}
 
         <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => (

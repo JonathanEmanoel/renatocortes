@@ -10,8 +10,8 @@ import { z } from "zod";
 import { AuthLayout } from "@/components/layout/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { useAuthStore } from "@/store/auth-store";
-import type { UserRole } from "@/types/auth";
 import { createClient } from "@/utils/supabase/client";
 
 const loginSchema = z.object({
@@ -20,12 +20,6 @@ const loginSchema = z.object({
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
-
-function getDashboardPath(role: UserRole, hasBarber = false) {
-  if (role === "CLIENT") return "/cliente";
-  if (role === "BARBER" || (role === "ADMIN" && hasBarber)) return "/funcionario";
-  return "/admin";
-}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,8 +54,14 @@ export default function LoginPage() {
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) {
         const response = await fetch("/api/auth/me").catch(() => null);
-        const user = response?.ok ? await response.json() : null;
-        router.replace(user?.role ? getDashboardPath(user.role, Boolean(user.hasBarber)) : "/cliente");
+        if (!response?.ok) {
+          await supabase.auth.signOut();
+          setFormError("Sua sessao nao pode ser validada. Entre novamente para continuar.");
+          return;
+        }
+
+        const user = await response.json();
+        router.replace(getDashboardPath(user.role, Boolean(user.hasBarber)));
       }
     });
   }, [router]);

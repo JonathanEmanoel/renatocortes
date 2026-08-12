@@ -37,6 +37,7 @@ type ExpenseItem = {
   paymentMethod: string;
   status: "PENDING" | "PAID" | "OVERDUE" | "CANCELED";
   notes: string;
+  createdByName: string;
 };
 
 type ExpenseStatus = ExpenseItem["status"];
@@ -222,6 +223,7 @@ export function FinanceExpensePanel({
   const pendingAmount = expenses
     .filter((expense) => expense.status === "PENDING" || expense.status === "OVERDUE")
     .reduce((sum, expense) => sum + expense.amount, 0);
+  const pendingApprovalExpenses = expenses.filter((expense) => expense.status === "PENDING");
   const paidAmount = expenses.filter((expense) => expense.status === "PAID").reduce((sum, expense) => sum + expense.amount, 0);
   const monthProfit = monthRevenue - monthExpenses;
   const annualProfit = annualRevenue - annualExpenses;
@@ -311,6 +313,21 @@ export function FinanceExpensePanel({
     router.refresh();
   }
 
+  async function reviewExpense(expense: ExpenseItem, status: "PAID" | "CANCELED") {
+    await requestExpense("PATCH", {
+      expenseId: expense.id,
+      categoryId: expense.categoryId || undefined,
+      name: expense.name,
+      description: expense.description || undefined,
+      amount: expense.amount,
+      dueDate: expense.dueDate || undefined,
+      paidAt: status === "PAID" ? todayInputValue() : undefined,
+      paymentMethod: expense.paymentMethod || "PIX",
+      status,
+      notes: expense.notes || undefined
+    });
+  }
+
   return (
     <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-4 shadow-panel sm:p-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
@@ -384,6 +401,43 @@ export function FinanceExpensePanel({
       </div>
 
       {message ? <div className="mt-5 rounded-[10px] border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-bold text-primary">{message}</div> : null}
+
+      {pendingApprovalExpenses.length > 0 ? (
+        <section className="mt-6 rounded-[12px] border border-primary/25 bg-primary/5 p-4 sm:p-5">
+          <div className="flex flex-col justify-between gap-2 md:flex-row md:items-end">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-primary">Aprovacao</p>
+              <h3 className="mt-1 text-xl font-black uppercase">Despesas pendentes dos barbeiros</h3>
+              <p className="mt-1 text-sm text-white/55">Aprove somente os gastos que devem entrar no financeiro da barbearia.</p>
+            </div>
+            <strong className="text-primary">{pendingApprovalExpenses.length} pendente(s)</strong>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {pendingApprovalExpenses.map((expense) => (
+              <article key={expense.id} className="rounded-[10px] border border-white/10 bg-black/35 p-4">
+                <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                  <div className="min-w-0">
+                    <p className="truncate font-black uppercase">{expense.name}</p>
+                    <p className="mt-1 text-sm text-white/55">
+                      Registrado por {expense.createdByName || "usuario interno"}{expense.categoryName ? ` - ${expense.categoryName}` : ""}
+                    </p>
+                    {expense.notes ? <p className="mt-2 text-sm text-white/60">{expense.notes}</p> : null}
+                  </div>
+                  <strong className="shrink-0 text-xl text-primary">{formatCurrency(expense.amount)}</strong>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button type="button" className="bg-primary text-black hover:bg-primary/90" onClick={() => void reviewExpense(expense, "PAID")}>
+                    Aprovar
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => void reviewExpense(expense, "CANCELED")}>
+                    Recusar
+                  </Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <div className="min-w-0 rounded-[10px] border border-white/10 bg-black/30 p-4">

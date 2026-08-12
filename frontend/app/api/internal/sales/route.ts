@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/server/audit";
-import { PRODUCT_PROFIT_COMMISSION_PERCENT, productProfitCommission } from "@/lib/server/finance-rules";
+import { PRODUCT_PROFIT_COMMISSION_PERCENT, productItemsCommission } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const requestSchema = z.object({
@@ -92,9 +92,15 @@ export async function POST(request: Request) {
       };
     });
     const totalValue = items.reduce((sum, item) => sum + item.subtotal, 0);
-    const totalCost = items.reduce((sum, item) => sum + Number(item.product.costPrice) * item.quantity, 0);
     const commissionPercent = PRODUCT_PROFIT_COMMISSION_PERCENT;
-    const commissionAmount = productProfitCommission(totalValue, totalCost);
+    const commissionAmount = productItemsCommission(
+      items.map((item) => ({
+        quantity: item.quantity,
+        price: item.product.price,
+        costPrice: item.product.costPrice,
+        product: { visibleInStore: item.product.visibleInStore }
+      }))
+    );
 
     const sale = await prisma.$transaction(async (tx) => {
       const created = await tx.sale.create({
@@ -159,7 +165,7 @@ export async function POST(request: Request) {
       action: "MANUAL_PRODUCT_SALE_CREATE",
       entity: "Sale",
       entityId: sale.id,
-      metadata: { barberId, items: payload.data.items, customerName: payload.data.customerName ?? null, gross: totalValue, cost: totalCost, commission: commissionAmount }
+      metadata: { barberId, items: payload.data.items, customerName: payload.data.customerName ?? null, gross: totalValue, commission: commissionAmount }
     });
 
     return NextResponse.json({ sale });
@@ -204,8 +210,7 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const totalCost = sale.items.reduce((sum, item) => sum + Number(item.costPrice) * item.quantity, 0);
-    const commissionAmount = sale.barberId ? productProfitCommission(Number(sale.totalValue), totalCost) : 0;
+    const commissionAmount = sale.barberId ? productItemsCommission(sale.items) : 0;
 
     const completed = await prisma.$transaction(async (tx) => {
       for (const item of sale.items) {

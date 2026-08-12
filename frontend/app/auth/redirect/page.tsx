@@ -2,7 +2,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { redirect } from "next/navigation";
-import { getAuthenticatedUser, getDashboardPath } from "@/lib/server/internal-auth";
+import { getDashboardPath } from "@/lib/auth-routes";
+import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export default async function AuthRedirectPage() {
   const session = await getAuthenticatedUser();

@@ -28,12 +28,12 @@ export default async function AdminFinancePage() {
   const [expenseCategories, expenses, monthMetrics, annualMetrics, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
     await Promise.all([
       prisma.expenseCategory.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
-      prisma.expense.findMany({ where: { deletedAt: null }, include: { category: true }, orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }], take: 80 }),
+      prisma.expense.findMany({ where: { deletedAt: null }, include: { category: true, createdBy: true }, orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }], take: 80 }),
       getFinanceMetrics(monthStart, monthEnd),
       getFinanceMetrics(yearStart, yearEnd),
-      prisma.expense.count({ where: { status: { not: "PAID" }, dueDate: { lt: todayStart }, deletedAt: null } }),
-      prisma.expense.count({ where: { status: { not: "PAID" }, dueDate: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
-      prisma.expense.count({ where: { status: { not: "PAID" }, dueDate: { gte: todayStart, lte: dueSoonEnd }, deletedAt: null } })
+      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { lt: todayStart }, deletedAt: null } }),
+      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
+      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lte: dueSoonEnd }, deletedAt: null } })
     ]);
 
   return (
@@ -60,7 +60,8 @@ export default async function AdminFinancePage() {
             paidAt: expense.paidAt ? expense.paidAt.toISOString().slice(0, 10) : "",
             paymentMethod: expense.paymentMethod ?? "",
             status: expense.status,
-            notes: expense.notes ?? ""
+            notes: expense.notes ?? "",
+            createdByName: expense.createdBy?.name ?? ""
           }))}
           monthRevenue={monthMetrics.grossRevenue}
           monthExpenses={monthMetrics.paidExpenses}

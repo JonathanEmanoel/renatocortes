@@ -1,4 +1,5 @@
 import Image from "next/image";
+import type { CSSProperties } from "react";
 import { cn } from "@/utils/cn";
 
 type LogoProps = {
@@ -7,9 +8,23 @@ type LogoProps = {
 };
 
 export function Logo({ compact = false, className }: LogoProps) {
+  const logoSize = compact ? 64 : 112;
+  const logoFrameStyle: CSSProperties = {
+    position: "relative",
+    width: logoSize,
+    height: logoSize,
+    minWidth: logoSize,
+    minHeight: logoSize,
+    maxWidth: logoSize,
+    maxHeight: logoSize,
+    overflow: "hidden",
+    borderRadius: 9999
+  };
+
   return (
     <div className={cn("flex flex-col items-center text-center", className)}>
       <div
+        style={logoFrameStyle}
         className={cn(
           "relative overflow-hidden rounded-full border border-primary/70 bg-black shadow-panel ring-2 ring-white/70",
           compact ? "h-16 w-16" : "h-28 w-28"

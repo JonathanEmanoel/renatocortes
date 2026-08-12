@@ -273,7 +273,7 @@ export function ProductManagementPanel({ categories, products }: { categories: C
             <label className="flex items-center gap-3 font-bold uppercase text-white/70"><input type="checkbox" checked={form.visibleInStore} onChange={(event) => setForm({ ...form, visibleInStore: event.target.checked })} /> Visivel na loja do cliente</label>
             <div className="flex flex-wrap gap-3">
               <Button type="submit">{form.productId ? "Salvar alteracoes" : "Criar produto"}</Button>
-              {form.productId ? <Button type="button" variant="outline" onClick={() => window.confirm("Desativar este produto?") && void requestJson("/api/internal/products", "DELETE", { productId: form.productId })}>Desativar</Button> : null}
+              {form.productId ? <Button type="button" variant="outline" onClick={() => window.confirm("Excluir este produto? Ele deixara de aparecer nas listas e na loja.") && void requestJson("/api/internal/products", "DELETE", { productId: form.productId })}>Excluir produto</Button> : null}
             </div>
           </form>
         </div>

@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/utils/supabase/server";
 import type { UserRole } from "@/types/auth";
+export { getDashboardPath } from "@/lib/auth-routes";
 
 type InternalProfile = {
   name: string;
@@ -53,12 +54,6 @@ const internalProfiles: Record<string, InternalProfile> = {
     phone: "81 9 84667532"
   }
 };
-
-export function getDashboardPath(role: UserRole, hasBarber = false) {
-  if (role === "CLIENT") return "/cliente";
-  if (role === "BARBER" || (role === "ADMIN" && hasBarber)) return "/funcionario";
-  return "/admin";
-}
 
 export function getInternalProfileByEmail(email: string) {
   return internalProfiles[email.trim().toLowerCase()] ?? null;
