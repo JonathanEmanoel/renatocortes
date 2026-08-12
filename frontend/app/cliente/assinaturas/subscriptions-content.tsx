@@ -25,6 +25,7 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [whatsAppSuccessUrl, setWhatsAppSuccessUrl] = useState<string | null>(null);
 
   async function sendRequest(body: object, successMessage: string) {
     const response = await fetch("/api/subscriptions", {
@@ -40,7 +41,13 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
   }
 
   async function selectPlan(plan: SubscriptionPlan) {
+    if (whatsAppSuccessUrl) {
+      window.location.assign(whatsAppSuccessUrl);
+      return;
+    }
+
     setFeedback(null);
+    setWhatsAppSuccessUrl(null);
     setLoadingPlanId(plan.id);
     try {
       if (currentSubscription) {
@@ -50,7 +57,11 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
       }
 
       const payload = await sendRequest({ planId: plan.id }, "Solicitação salva. Confirme a assinatura pelo WhatsApp.");
-      if (payload?.whatsAppUrl) window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
+      if (payload?.whatsAppUrl) {
+        setWhatsAppSuccessUrl(payload.whatsAppUrl);
+        setFeedback("Solicitacao de assinatura realizada. Confirme pelo WhatsApp.");
+        window.location.assign(payload.whatsAppUrl);
+      }
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Falha de conexão. Tente novamente.");
     } finally {
@@ -109,8 +120,17 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
       <section className="mt-10">
         <SectionTitle title={currentSubscription ? "Alterar plano" : "Escolha seu plano"} />
         {feedback ? <p className="mb-5 rounded-[8px] border border-primary/50 p-4 text-primary">{feedback}</p> : null}
+        {whatsAppSuccessUrl ? (
+          <div className="mb-5 rounded-[10px] border border-primary/45 bg-primary/10 p-5">
+            <p className="font-black uppercase text-primary">Solicitacao de assinatura realizada.</p>
+            <p className="mt-2 text-sm text-white/68">Se o WhatsApp nao abrir automaticamente, toque no botao abaixo para confirmar com a barbearia.</p>
+            <a href={whatsAppSuccessUrl} className="mt-5 inline-flex min-h-12 items-center justify-center rounded-[10px] bg-primary px-5 text-sm font-black uppercase text-black transition hover:bg-primary/90">
+              Abrir WhatsApp
+            </a>
+          </div>
+        ) : null}
         <div className="grid gap-5 lg:grid-cols-3">
-          {plans.map((plan) => <SubscriptionCard key={plan.id} plan={plan} onRequest={selectPlan} isLoading={loadingPlanId === plan.id} disabled={plan.id === currentSubscription?.planId} actionLabel={plan.id === currentSubscription?.planId ? "Plano atual" : currentSubscription ? "Alterar para este plano" : "Solicitar plano"} />)}
+          {plans.map((plan) => <SubscriptionCard key={plan.id} plan={plan} onRequest={selectPlan} isLoading={loadingPlanId === plan.id} disabled={Boolean(whatsAppSuccessUrl) || plan.id === currentSubscription?.planId} actionLabel={plan.id === currentSubscription?.planId ? "Plano atual" : currentSubscription ? "Alterar para este plano" : "Solicitar plano"} />)}
         </div>
       </section>
     </ClientShell>

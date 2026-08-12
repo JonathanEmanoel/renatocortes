@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { MessageCircle, ShoppingBag } from "lucide-react";
 import { ClientShell } from "@/components/client/client-shell";
 import { SectionTitle } from "@/components/client/section-title";
@@ -19,8 +18,9 @@ function formatCurrency(value: number) {
 
 type DeliveryMethod = "Retirar na barbearia" | "Entrega";
 
+const CHECKOUT_SUCCESS_STORAGE_KEY = "renato-cortes-checkout-success";
+
 export default function CheckoutPage() {
-  const router = useRouter();
   const items = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
   const [customerName, setCustomerName] = useState("");
@@ -32,6 +32,7 @@ export default function CheckoutPage() {
   const [complement, setComplement] = useState("");
   const [observations, setObservations] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [whatsAppSuccessUrl, setWhatsAppSuccessUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const total = useMemo(
@@ -39,7 +40,28 @@ export default function CheckoutPage() {
     [items]
   );
 
+  useEffect(() => {
+    const savedUrl = window.sessionStorage.getItem(CHECKOUT_SUCCESS_STORAGE_KEY);
+    if (savedUrl) {
+      setWhatsAppSuccessUrl(savedUrl);
+      setFeedback("Pedido realizado com sucesso. Confirme pelo WhatsApp.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (items.length > 0 && whatsAppSuccessUrl) {
+      window.sessionStorage.removeItem(CHECKOUT_SUCCESS_STORAGE_KEY);
+      setWhatsAppSuccessUrl(null);
+      setFeedback(null);
+    }
+  }, [items.length, whatsAppSuccessUrl]);
+
   async function submitOrder() {
+    if (whatsAppSuccessUrl) {
+      window.location.assign(whatsAppSuccessUrl);
+      return;
+    }
+
     setFeedback(null);
 
     if (items.length === 0) {
@@ -89,11 +111,16 @@ export default function CheckoutPage() {
       }
 
       if (payload?.whatsAppUrl) {
-        window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
+        setWhatsAppSuccessUrl(payload.whatsAppUrl);
+        window.sessionStorage.setItem(CHECKOUT_SUCCESS_STORAGE_KEY, payload.whatsAppUrl);
+        setFeedback("Pedido realizado com sucesso. Confirme pelo WhatsApp.");
+        clearCart();
+        window.location.assign(payload.whatsAppUrl);
+        return;
       }
 
       clearCart();
-      router.push("/cliente/checkout/sucesso");
+      setFeedback("Pedido realizado com sucesso, mas o link do WhatsApp nao foi retornado.");
     } catch {
       setFeedback("Falha de conexao. Tente novamente.");
     } finally {
@@ -106,7 +133,21 @@ export default function CheckoutPage() {
       <p className="text-sm font-bold uppercase tracking-[0.22em] text-primary">Checkout</p>
       <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Finalizar pedido</h1>
 
-      {items.length === 0 ? (
+      {whatsAppSuccessUrl ? (
+        <section className="mt-9 rounded-[12px] border border-primary/30 bg-card p-7 text-center shadow-panel">
+          <MessageCircle className="mx-auto h-12 w-12 text-primary" />
+          <p className="mt-4 text-lg font-black uppercase text-primary">Pedido realizado com sucesso.</p>
+          <p className="mt-3 text-white/68">Se o WhatsApp nao abrir automaticamente, toque no botao abaixo para enviar a confirmacao.</p>
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <a href={whatsAppSuccessUrl} className="inline-flex min-h-12 items-center justify-center rounded-[10px] bg-primary px-6 text-sm font-black uppercase text-black transition hover:bg-primary/90">
+              Abrir WhatsApp
+            </a>
+            <Link href="/cliente/loja" className="inline-flex min-h-12 items-center justify-center rounded-[10px] border border-primary/45 px-6 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
+              Continuar comprando
+            </Link>
+          </div>
+        </section>
+      ) : items.length === 0 ? (
         <section className="mt-9 rounded-[12px] border border-primary/20 bg-card p-7 text-center">
           <ShoppingBag className="mx-auto h-12 w-12 text-primary" />
           <p className="mt-4 text-lg font-bold">Seu carrinho esta vazio.</p>

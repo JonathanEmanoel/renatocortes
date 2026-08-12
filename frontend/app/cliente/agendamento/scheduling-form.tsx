@@ -44,6 +44,8 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
   const [date, setDate] = useState(dates[0]?.value ?? "");
   const [time, setTime] = useState(availableTimes[0] ?? "");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [whatsAppSuccessUrl, setWhatsAppSuccessUrl] = useState<string | null>(null);
+  const [calendarSuccessUrl, setCalendarSuccessUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selected = useMemo(() => {
@@ -97,6 +99,11 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
   }
 
   async function confirmAppointment() {
+    if (whatsAppSuccessUrl) {
+      window.location.assign(whatsAppSuccessUrl);
+      return;
+    }
+
     if (selected.services.length === 0) {
       setFeedback("Selecione pelo menos um servico.");
       setStep(0);
@@ -109,6 +116,8 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
     }
 
     setFeedback(null);
+    setWhatsAppSuccessUrl(null);
+    setCalendarSuccessUrl(null);
     setIsSubmitting(true);
 
     try {
@@ -129,17 +138,18 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
         return;
       }
 
-      if (payload?.whatsAppUrl) {
-        window.open(payload.whatsAppUrl, "_blank", "noopener,noreferrer");
-      } else {
-        setFeedback("O agendamento foi criado, mas nao foi possivel abrir o WhatsApp.");
-      }
-
       if (payload?.googleCalendarAuthUrl) {
-        window.open(payload.googleCalendarAuthUrl, "_blank", "noopener,noreferrer");
+        setCalendarSuccessUrl(payload.googleCalendarAuthUrl);
       }
 
-      setFeedback("Agendamento criado. Confirme os detalhes pelo WhatsApp.");
+      if (payload?.whatsAppUrl) {
+        setWhatsAppSuccessUrl(payload.whatsAppUrl);
+        setFeedback("Agendamento criado. Envie a confirmacao pelo WhatsApp.");
+        window.location.assign(payload.whatsAppUrl);
+        return;
+      }
+
+      setFeedback("Agendamento criado, mas o link do WhatsApp nao foi retornado.");
     } catch {
       setFeedback("Nao foi possivel criar o agendamento agora.");
     } finally {
@@ -301,9 +311,26 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
                 <SummaryRow label="Horario" value={time} />
               </div>
               {feedback ? <p className="mt-6 rounded-[8px] border border-primary/50 p-4 text-primary">{feedback}</p> : null}
-              <Button className="mt-8 w-full" onClick={confirmAppointment} disabled={isSubmitting}>
-                {isSubmitting ? "Confirmando..." : "Confirmar Agendamento"}
-              </Button>
+              {whatsAppSuccessUrl ? (
+                <div className="mt-6 rounded-[10px] border border-primary/45 bg-primary/10 p-5">
+                  <p className="font-black uppercase text-primary">Agendamento realizado com sucesso.</p>
+                  <p className="mt-2 text-sm text-white/68">Se o WhatsApp nao abrir automaticamente, toque no botao abaixo para enviar a confirmacao.</p>
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <a href={whatsAppSuccessUrl} className="inline-flex min-h-12 items-center justify-center rounded-[10px] bg-primary px-5 text-sm font-black uppercase text-black transition hover:bg-primary/90">
+                      Abrir WhatsApp
+                    </a>
+                    {calendarSuccessUrl ? (
+                      <a href={calendarSuccessUrl} className="inline-flex min-h-12 items-center justify-center rounded-[10px] border border-primary/45 px-5 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
+                        Conectar Google Calendar
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ) : (
+                <Button className="mt-8 w-full" onClick={confirmAppointment} disabled={isSubmitting}>
+                  {isSubmitting ? "Confirmando..." : "Confirmar Agendamento"}
+                </Button>
+              )}
             </div>
           </>
         ) : null}

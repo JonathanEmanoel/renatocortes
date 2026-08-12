@@ -11,7 +11,7 @@ export default function CheckoutSuccessPage() {
         <p className="mt-6 text-sm font-bold uppercase tracking-[0.22em] text-primary">Pedido enviado</p>
         <h1 className="mt-3 text-3xl font-black uppercase md:text-5xl">Obrigado!</h1>
         <p className="mt-4 text-white/70">
-          Seu pedido foi registrado e o WhatsApp foi aberto para confirmar os detalhes com a barbearia.
+          Seu pedido foi registrado. Se o WhatsApp nao abrir automaticamente, volte ao checkout e toque em Abrir WhatsApp.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link href="/cliente/loja">

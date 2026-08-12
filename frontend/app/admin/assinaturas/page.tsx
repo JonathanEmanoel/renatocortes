@@ -102,7 +102,7 @@ export default async function AdminSubscriptionsPage() {
                       <p className="mt-1 text-sm font-bold text-primary">{daysRemaining(subscription.endDate)}</p>
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
-                      <a href={url} target="_blank" rel="noreferrer" className="rounded-[10px] border border-primary bg-primary px-4 py-3 text-sm font-black uppercase text-black">
+                      <a href={url} className="rounded-[10px] border border-primary bg-primary px-4 py-3 text-sm font-black uppercase text-black">
                         Renovar no WhatsApp
                       </a>
                       <SubscriptionActionButtons subscriptionId={subscription.id} active />
