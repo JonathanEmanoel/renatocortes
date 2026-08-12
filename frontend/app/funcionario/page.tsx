@@ -170,8 +170,8 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
     commission: "all" as const
   };
 
+  const report = await getBarberReport(reportFilters);
   const [
-    report,
     todayAppointments,
     chartAppointments,
     chartManualServices,
@@ -179,7 +179,6 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
     serviceOptions,
     productOptions
   ] = await Promise.all([
-    getBarberReport(reportFilters),
     prisma.appointment.findMany({
       where: { barberId, dataHora: { gte: todayStart, lte: todayEnd }, deletedAt: null },
       include: { client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } }, service: true, services: { include: { service: true } } },

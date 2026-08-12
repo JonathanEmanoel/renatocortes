@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import type { Prisma } from "@prisma/client";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/utils/supabase/server";
 import type { UserRole } from "@/types/auth";
@@ -59,17 +60,8 @@ export function getInternalProfileByEmail(email: string) {
   return internalProfiles[email.trim().toLowerCase()] ?? null;
 }
 
-export async function getAuthenticatedUser(): Promise<AuthenticatedSession | null> {
-  const cookieStore = await cookies();
-  const supabase = createClient(cookieStore);
-  const {
-    data: { user },
-    error
-  } = await supabase.auth.getUser();
-
-  if (error || !user?.id || !user.email) {
-    return null;
-  }
+async function resolveDbSession(user: Awaited<ReturnType<ReturnType<typeof createClient>["auth"]["getUser"]>>["data"]["user"]): Promise<AuthenticatedSession | null> {
+  if (!user?.id || !user.email) return null;
 
   const email = user.email.trim().toLowerCase();
   const internalProfile = getInternalProfileByEmail(email);
@@ -173,4 +165,39 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedSession | nul
     authUser: user,
     user: dbUser
   };
+}
+
+export async function getAuthenticatedUser(): Promise<AuthenticatedSession | null> {
+  const cookieStore = await cookies();
+  const supabase = createClient(cookieStore);
+  const {
+    data: { user },
+    error
+  } = await supabase.auth.getUser();
+
+  if (error || !user?.id || !user.email) {
+    return null;
+  }
+
+  return resolveDbSession(user);
+}
+
+export async function getAuthenticatedUserFromToken(accessToken: string): Promise<AuthenticatedSession | null> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+  const {
+    data: { user },
+    error
+  } = await supabase.auth.getUser(accessToken);
+
+  if (error || !user?.id || !user.email) return null;
+  return resolveDbSession(user);
 }

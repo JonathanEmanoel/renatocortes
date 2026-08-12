@@ -1,8 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { SERVICE_COMMISSION_PERCENT, appointmentGross, productItemsCommission } from "@/lib/server/finance-rules";
+import { SERVICE_COMMISSION_PERCENT, SUBSCRIPTION_BARBER_PERCENT, appointmentGross, productItemsCommission } from "@/lib/server/finance-rules";
 
-export type MaintenanceCategory = "accounts" | "appointments" | "manual-services" | "in-person-sales" | "store-orders" | "expenses";
+export type MaintenanceCategory = "accounts" | "appointments" | "manual-services" | "in-person-sales" | "store-orders" | "subscriptions" | "expenses";
 export type MaintenanceMode = "hide" | "delete";
 
 export type MaintenanceFilters = {
@@ -46,6 +46,7 @@ export const maintenanceCategories: { id: MaintenanceCategory; label: string; de
   { id: "manual-services", label: "Atendimentos avulsos", description: "Atendimentos registrados fora do fluxo de agendamento." },
   { id: "in-person-sales", label: "Vendas presenciais", description: "Vendas registradas por barbeiros no balcao." },
   { id: "store-orders", label: "Pedidos da loja", description: "Pedidos feitos pela loja do cliente." },
+  { id: "subscriptions", label: "Assinaturas", description: "Assinaturas e receita recorrente dos clientes." },
   { id: "expenses", label: "Despesas", description: "Despesas pontuais de teste." }
 ];
 
@@ -139,16 +140,17 @@ export async function getMaintenanceData(filters: MaintenanceFilters, developerU
 }
 
 async function getCounters() {
-  const [accounts, appointments, manualAudits, inPersonSales, storeOrders, expenses] = await Promise.all([
+  const [accounts, appointments, manualAudits, inPersonSales, storeOrders, subscriptions, expenses] = await Promise.all([
     prisma.user.count({ where: { role: "CLIENT", deletedAt: null } }),
     prisma.appointment.count({ where: { deletedAt: null } }),
     prisma.auditLog.findMany({ where: { action: "MANUAL_SERVICE_CREATE" }, select: { metadata: true } }),
     prisma.sale.count({ where: { barberId: { not: null }, deletedAt: null } }),
     prisma.sale.count({ where: { barberId: null, deletedAt: null } }),
+    prisma.subscription.count({ where: { deletedAt: null } }),
     prisma.expense.count({ where: { deletedAt: null } })
   ]);
   const manualServices = manualAudits.filter((audit) => !isMaintenanceHidden(audit.metadata)).length;
-  return { accounts, appointments, "manual-services": manualServices, "in-person-sales": inPersonSales, "store-orders": storeOrders, expenses };
+  return { accounts, appointments, "manual-services": manualServices, "in-person-sales": inPersonSales, "store-orders": storeOrders, subscriptions, expenses };
 }
 
 export async function getMaintenanceRows(filters: MaintenanceFilters, developerUserId: string): Promise<MaintenanceRow[]> {
@@ -158,6 +160,7 @@ export async function getMaintenanceRows(filters: MaintenanceFilters, developerU
   if (filters.category === "manual-services") return manualRows(filters, range);
   if (filters.category === "in-person-sales") return saleRows(filters, true, range);
   if (filters.category === "store-orders") return saleRows(filters, false, range);
+  if (filters.category === "subscriptions") return subscriptionRows(filters, range);
   return expenseRows(filters, range);
 }
 
@@ -327,6 +330,51 @@ async function expenseRows(filters: MaintenanceFilters, range?: { gte?: Date; lt
     }));
 }
 
+async function subscriptionRows(filters: MaintenanceFilters, range?: { gte?: Date; lte?: Date }) {
+  const subscriptions = await prisma.subscription.findMany({
+    where: {
+      deletedAt: filters.view === "hidden" ? { not: null } : null,
+      ...(range ? { createdAt: range } : {}),
+      ...(filters.clientId ? { clientId: filters.clientId } : {}),
+      ...(filters.status ? { status: filters.status as never } : {})
+    },
+    include: {
+      client: { include: { user: true } },
+      subscriptionPlan: true,
+      payments: true
+    },
+    orderBy: { createdAt: "desc" },
+    take: 150
+  });
+
+  return subscriptions
+    .filter((subscription) => matchQuery([
+      subscription.id,
+      subscription.client.user.name,
+      subscription.client.user.email,
+      subscription.client.user.phone,
+      subscription.subscriptionPlan.name
+    ], filters.q))
+    .map((subscription) => {
+      const amount = toNumber(subscription.subscriptionPlan.value);
+      return {
+        id: subscription.id,
+        title: subscription.client.user.name,
+        subtitle: subscription.subscriptionPlan.name,
+        meta: [
+          `Status: ${subscription.status}`,
+          `Ativa: ${subscription.active ? "Sim" : "Nao"}`,
+          `Criada em: ${subscription.createdAt.toLocaleString("pt-BR")}`,
+          `Inicio: ${subscription.startDate.toLocaleDateString("pt-BR")}`,
+          `Fim: ${subscription.endDate ? subscription.endDate.toLocaleDateString("pt-BR") : "Sem fim"}`,
+          `Pagamentos: ${subscription.payments.length}`
+        ],
+        amount,
+        commission: amount * (SUBSCRIPTION_BARBER_PERCENT / 100)
+      };
+    });
+}
+
 export async function previewMaintenance(category: MaintenanceCategory, ids: string[], mode: MaintenanceMode, developerUserId: string, restoreStock: boolean, includeHidden = false): Promise<MaintenancePreview> {
   const uniqueIds = [...new Set(ids)].filter(Boolean);
   const rows = await getMaintenanceRows({ category, view: includeHidden ? "hidden" : "active" }, developerUserId);
@@ -350,6 +398,7 @@ export async function previewMaintenance(category: MaintenanceCategory, ids: str
       ...(allowed.length > 20 ? ["Operacao de grande impacto: mais de 20 registros selecionados."] : []),
       ...(mode === "delete" ? ["Exclusao remove registros selecionados de forma permanente."] : ["Ocultar preserva os registros com deletedAt quando o modelo permite."]),
       ...(category === "expenses" ? ["Despesas com vencimento nao entram na limpeza comum."] : []),
+      ...(category === "subscriptions" ? ["Assinaturas ativas entram no faturamento recorrente do dashboard e na divisao 60/40."] : []),
       ...(category === "accounts" && mode === "delete" ? ["Exclusao de conta tenta remover Supabase Auth se a Service Role estiver configurada no servidor."] : [])
     ],
     rows: allowed
@@ -382,6 +431,7 @@ async function countRelatedRecords(category: MaintenanceCategory, ids: string[])
     return items + commissions + payments;
   }
   if (category === "expenses") return prisma.financialTransaction.count({ where: { expenseId: { in: ids } } });
+  if (category === "subscriptions") return prisma.payment.count({ where: { subscriptionId: { in: ids } } });
   const users = await prisma.user.findMany({ where: { id: { in: ids } }, include: { client: true } });
   const clientIds = users.map((user) => user.client?.id).filter((id): id is string => Boolean(id));
   const [appointments, sales, subscriptions] = await Promise.all([
@@ -412,6 +462,7 @@ export async function executeMaintenance(input: {
     if (input.category === "appointments") await cleanAppointments(tx, preview.ids, input.mode);
     if (input.category === "manual-services") await cleanManualServices(tx, preview.ids, input.mode);
     if (input.category === "in-person-sales" || input.category === "store-orders") await cleanSales(tx, preview.ids, input.mode, input.restoreStock);
+    if (input.category === "subscriptions") await cleanSubscriptions(tx, preview.ids, input.mode);
     if (input.category === "expenses") await cleanExpenses(tx, preview.ids, input.mode, input.developerUserId);
     if (input.category === "accounts") await cleanAccounts(tx, preview.ids, input.mode);
 
@@ -453,6 +504,7 @@ export async function restoreMaintenance(input: {
     if (input.category === "appointments") await restoreAppointments(tx, ids);
     if (input.category === "manual-services") await restoreManualServices(tx, ids);
     if (input.category === "in-person-sales" || input.category === "store-orders") await restoreSales(tx, ids);
+    if (input.category === "subscriptions") await restoreSubscriptions(tx, ids);
     if (input.category === "expenses") await restoreExpenses(tx, ids, input.developerUserId);
 
     await tx.auditLog.create({
@@ -558,6 +610,22 @@ async function cleanExpenses(tx: Prisma.TransactionClient, ids: string[], mode: 
   await tx.expense.deleteMany({ where: { id: { in: ids }, dueDate: null } });
 }
 
+async function cleanSubscriptions(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode) {
+  const payments = await tx.payment.findMany({ where: { subscriptionId: { in: ids } }, select: { id: true } });
+  const paymentIds = payments.map((payment) => payment.id);
+
+  if (mode === "hide") {
+    await tx.financialTransaction.updateMany({ where: { paymentId: { in: paymentIds } }, data: { deletedAt: new Date() } });
+    await tx.payment.updateMany({ where: { id: { in: paymentIds } }, data: { deletedAt: new Date() } });
+    await tx.subscription.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
+    return;
+  }
+
+  await tx.financialTransaction.deleteMany({ where: { paymentId: { in: paymentIds } } });
+  await tx.payment.deleteMany({ where: { id: { in: paymentIds } } });
+  await tx.subscription.deleteMany({ where: { id: { in: ids } } });
+}
+
 async function cleanAccounts(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode) {
   const users = await tx.user.findMany({ where: { id: { in: ids }, role: "CLIENT" }, include: { client: true } });
   const userIds = users.map((user) => user.id);
@@ -659,6 +727,14 @@ async function restoreSales(tx: Prisma.TransactionClient, ids: string[]) {
 async function restoreExpenses(tx: Prisma.TransactionClient, ids: string[], developerUserId: string) {
   await tx.expense.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null, updatedById: developerUserId } });
   await tx.financialTransaction.updateMany({ where: { expenseId: { in: ids } }, data: { deletedAt: null } });
+}
+
+async function restoreSubscriptions(tx: Prisma.TransactionClient, ids: string[]) {
+  const payments = await tx.payment.findMany({ where: { subscriptionId: { in: ids } }, select: { id: true } });
+  const paymentIds = payments.map((payment) => payment.id);
+  await tx.subscription.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null } });
+  await tx.payment.updateMany({ where: { id: { in: paymentIds } }, data: { deletedAt: null } });
+  await tx.financialTransaction.updateMany({ where: { paymentId: { in: paymentIds } }, data: { deletedAt: null } });
 }
 
 async function restoreAccounts(tx: Prisma.TransactionClient, ids: string[]) {

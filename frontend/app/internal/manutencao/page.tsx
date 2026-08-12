@@ -85,7 +85,7 @@ export default async function MaintenancePage({ searchParams }: PageProps) {
           </div>
         </div>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           {maintenanceCategories.map((category) => (
             <Link
               key={category.id}
@@ -138,6 +138,8 @@ export default async function MaintenancePage({ searchParams }: PageProps) {
                 <option value="COMPLETED">Concluido</option>
                 <option value="CANCELED">Cancelado</option>
                 <option value="REJECTED">Rejeitado</option>
+                <option value="ACTIVE">Ativa</option>
+                <option value="EXPIRED">Expirada</option>
                 <option value="OPEN">Aberto</option>
                 <option value="PAID">Pago</option>
               </select>

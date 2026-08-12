@@ -60,10 +60,20 @@ export async function getSubscriptionRevenueForPeriod(startDate: Date, endDate: 
 }
 
 export async function getFinanceMetrics(startDate: Date, endDate: Date) {
-  const [incomeTransactions, paidExpenses, completedSales, manualCommissions, subscriptionRevenue] = await Promise.all([
+  const [incomeTransactions, completedAppointments, paidExpenses, completedSales, manualCommissions, subscriptionRevenue] = await Promise.all([
     prisma.financialTransaction.findMany({
-      where: { type: "INCOME", createdAt: { gte: startDate, lte: endDate }, deletedAt: null },
+      where: {
+        type: "INCOME",
+        createdAt: { gte: startDate, lte: endDate },
+        deletedAt: null,
+        OR: [{ paymentId: null }, { payment: { subscriptionId: null } }],
+        NOT: { description: { startsWith: "Atendimento finalizado:" } }
+      },
       select: { amount: true }
+    }),
+    prisma.appointment.findMany({
+      where: { status: "COMPLETED", dataHora: { gte: startDate, lte: endDate }, deletedAt: null },
+      include: { service: true, services: true }
     }),
     prisma.expense.findMany({
       where: { status: "PAID", paidAt: { gte: startDate, lte: endDate }, deletedAt: null },
@@ -81,6 +91,7 @@ export async function getFinanceMetrics(startDate: Date, endDate: Date) {
   ]);
 
   const transactionRevenue = incomeTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+  const appointmentRevenue = completedAppointments.reduce((sum, appointment) => sum + appointmentGross(appointment), 0);
   const paidExpenseTotal = paidExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
   const productCost = completedSales.reduce(
     (sum, sale) => sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.costPrice) * item.quantity, 0),
@@ -92,7 +103,7 @@ export async function getFinanceMetrics(startDate: Date, endDate: Date) {
   }, 0);
   const manualServiceCommissions = manualCommissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
   const subscriptionBarberShare = subscriptionRevenue * (SUBSCRIPTION_BARBER_PERCENT / 100);
-  const grossRevenue = transactionRevenue + subscriptionRevenue;
+  const grossRevenue = transactionRevenue + appointmentRevenue + subscriptionRevenue;
   const totalCommissions = productCommissions + manualServiceCommissions + subscriptionBarberShare;
 
   return {

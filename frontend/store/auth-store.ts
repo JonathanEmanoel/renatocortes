@@ -23,7 +23,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         try {
           const supabase = createClient();
-          const { error } = await supabase.auth.signInWithPassword({
+          const { data, error } = await supabase.auth.signInWithPassword({
             email: credentials.email,
             password: credentials.password
           });
@@ -41,7 +41,11 @@ export const useAuthStore = create<AuthState>()(
 
           const response = await fetch("/api/auth/me", {
             method: "GET",
-            headers: { "Content-Type": "application/json" }
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              ...(data.session?.access_token ? { Authorization: `Bearer ${data.session.access_token}` } : {})
+            }
           });
 
           if (!response.ok) {

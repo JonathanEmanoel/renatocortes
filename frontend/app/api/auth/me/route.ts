@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+import { getAuthenticatedUser, getAuthenticatedUserFromToken } from "@/lib/server/internal-auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const session = await getAuthenticatedUser();
+    const authorization = request.headers.get("authorization");
+    const bearerToken = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
+    const session = bearerToken ? await getAuthenticatedUserFromToken(bearerToken) : await getAuthenticatedUser();
 
     if (!session) {
-      return NextResponse.json({ message: "Sessão expirada. Faça login novamente." }, { status: 401 });
+      return NextResponse.json(
+        { message: "Nao foi possivel validar sua sessao. Confira o e-mail e senha e tente novamente." },
+        { status: 401 }
+      );
     }
 
     return NextResponse.json({
@@ -18,7 +23,7 @@ export async function GET() {
     });
   } catch {
     return NextResponse.json(
-      { message: "Não foi possível carregar seu perfil agora. Tente novamente." },
+      { message: "Nao foi possivel carregar seu perfil agora. Tente novamente." },
       { status: 500 }
     );
   }

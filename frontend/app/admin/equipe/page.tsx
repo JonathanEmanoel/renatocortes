@@ -28,13 +28,12 @@ export default async function AdminTeamPage() {
     { label: "Quinzena", period: "fortnight-current" },
     { label: "Mes", period: "month-current" }
   ];
-  const summaries = new Map(
-    await Promise.all(
-      barbers.flatMap((barber) =>
-        ranges.map(async (range) => [`${barber.id}:${range.period}`, await getBarberFinancialSummary({ barberId: barber.id, period: range.period })] as const)
-      )
-    )
-  );
+  const summaries = new Map<string, Awaited<ReturnType<typeof getBarberFinancialSummary>>>();
+  for (const barber of barbers) {
+    for (const range of ranges) {
+      summaries.set(`${barber.id}:${range.period}`, await getBarberFinancialSummary({ barberId: barber.id, period: range.period }));
+    }
+  }
 
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">

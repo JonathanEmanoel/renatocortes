@@ -8,7 +8,7 @@ import { executeMaintenance, previewMaintenance, restoreMaintenance } from "@/li
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const requestSchema = z.object({
-  category: z.enum(["accounts", "appointments", "manual-services", "in-person-sales", "store-orders", "expenses"]),
+  category: z.enum(["accounts", "appointments", "manual-services", "in-person-sales", "store-orders", "subscriptions", "expenses"]),
   mode: z.enum(["hide", "delete"]).default("hide"),
   ids: z.array(z.string().min(1)).min(1).max(100),
   restoreStock: z.boolean().default(false),

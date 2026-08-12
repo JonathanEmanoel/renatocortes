@@ -25,12 +25,12 @@ export default async function AdminFinancePage() {
   const dueSoonEnd = new Date(todayStart);
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
 
-  const [expenseCategories, expenses, monthMetrics, annualMetrics, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
+  const monthMetrics = await getFinanceMetrics(monthStart, monthEnd);
+  const annualMetrics = await getFinanceMetrics(yearStart, yearEnd);
+  const [expenseCategories, expenses, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
     await Promise.all([
       prisma.expenseCategory.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
       prisma.expense.findMany({ where: { deletedAt: null }, include: { category: true, createdBy: true }, orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }], take: 80 }),
-      getFinanceMetrics(monthStart, monthEnd),
-      getFinanceMetrics(yearStart, yearEnd),
       prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { lt: todayStart }, deletedAt: null } }),
       prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
       prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lte: dueSoonEnd }, deletedAt: null } })

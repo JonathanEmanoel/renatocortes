@@ -16,8 +16,8 @@ export default async function AdminReportsPage() {
 
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
-  const [metrics, completedAppointments, productsRanking, allProducts] = await Promise.all([
-    getFinanceMetrics(monthStart, monthEnd),
+  const metrics = await getFinanceMetrics(monthStart, monthEnd);
+  const [completedAppointments, productsRanking, allProducts] = await Promise.all([
     prisma.appointment.findMany({
       where: { dataHora: { gte: monthStart, lt: monthEnd }, status: "COMPLETED", deletedAt: null },
       include: { service: true, services: { include: { service: true } } }

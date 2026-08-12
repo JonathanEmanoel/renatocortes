@@ -33,10 +33,10 @@ export default async function AdminPanelPage() {
   const dueSoonEnd = new Date(todayStart);
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
 
+  const todayMetrics = await getFinanceMetrics(todayStart, todayEnd);
+  const monthMetrics = await getFinanceMetrics(monthStart, monthEnd);
   const [
     todayAppointmentsCount,
-    todayMetrics,
-    monthMetrics,
     pendingSalesCount,
     activeSubscriptions,
     pendingSubscriptionsCount,
@@ -46,8 +46,6 @@ export default async function AdminPanelPage() {
     operationalAppointments
   ] = await Promise.all([
     prisma.appointment.count({ where: { dataHora: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
-    getFinanceMetrics(todayStart, todayEnd),
-    getFinanceMetrics(monthStart, monthEnd),
     prisma.sale.count({ where: { status: "OPEN", deletedAt: null } }),
     prisma.subscription.count({ where: { status: "ACTIVE", deletedAt: null } }),
     prisma.subscription.count({ where: { status: "PENDING", deletedAt: null } }),

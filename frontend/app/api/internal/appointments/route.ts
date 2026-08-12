@@ -100,7 +100,7 @@ export async function PATCH(request: Request) {
         data: {
           type: "INCOME",
           amount: appointmentTotal,
-          description: `Atendimento finalizado: ${serviceNames}`
+          description: `Atendimento finalizado: ${appointment.id} - ${serviceNames}`
         }
       }).catch(() => null);
     }
