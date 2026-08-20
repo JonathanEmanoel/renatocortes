@@ -3,28 +3,47 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { periodQuery, resolvePeriodRange } from "@/lib/server/date-periods";
 import { getFinanceMetrics } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
-export default async function AdminReportsPage() {
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+const inputClass = "min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none transition focus:border-primary";
+
+export default async function AdminReportsPage({ searchParams }: PageProps) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/relatorios");
   if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
 
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
-  const metrics = await getFinanceMetrics(monthStart, monthEnd);
+  const params = (await searchParams) ?? {};
+  const range = resolvePeriodRange({
+    period: firstParam(params.period),
+    date: firstParam(params.date),
+    month: firstParam(params.month),
+    startDate: firstParam(params.startDate),
+    endDate: firstParam(params.endDate)
+  });
+  const metrics = await getFinanceMetrics(range.start, range.end);
+  const exportQuery = periodQuery(range);
   const [completedAppointments, productsRanking, allProducts] = await Promise.all([
     prisma.appointment.findMany({
-      where: { dataHora: { gte: monthStart, lt: monthEnd }, status: "COMPLETED", deletedAt: null },
+      where: { dataHora: { gte: range.start, lte: range.end }, status: "COMPLETED", deletedAt: null },
       include: { service: true, services: { include: { service: true } } }
     }),
     prisma.saleItem.groupBy({
       by: ["productId"],
-      where: { sale: { status: "COMPLETED", completedAt: { gte: monthStart, lt: monthEnd }, deletedAt: null } },
+      where: { sale: { status: "COMPLETED", completedAt: { gte: range.start, lte: range.end }, deletedAt: null } },
       _sum: { quantity: true },
       orderBy: { _sum: { quantity: "desc" } },
       take: 8
@@ -58,17 +77,48 @@ export default async function AdminReportsPage() {
           hasBarber={Boolean(session.user.barber?.id)}
         />
 
-        <div className="mt-8 flex flex-wrap gap-3">
-          <a href="/api/internal/reports/export?format=csv" className="inline-flex rounded-[10px] border border-primary/40 px-4 py-3 text-sm font-black uppercase text-primary">
-            <Download className="mr-2 h-4 w-4" /> Excel
-          </a>
-          <a href="/api/internal/reports/export?format=html" target="_blank" rel="noreferrer" className="inline-flex rounded-[10px] border border-primary/40 px-4 py-3 text-sm font-black uppercase text-primary">
-            <Download className="mr-2 h-4 w-4" /> PDF
-          </a>
-        </div>
+        <form className="mt-8 rounded-[12px] border border-primary/20 bg-card p-5 shadow-panel" action="/admin/relatorios">
+          <div className="grid gap-4 md:grid-cols-5">
+            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+              Periodo
+              <select name="period" defaultValue={range.period} className={inputClass}>
+                <option value="day">Dia</option>
+                <option value="week">Semana</option>
+                <option value="month">Mes</option>
+                <option value="custom">Personalizado</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+              Dia
+              <input name="date" type="date" defaultValue={range.date} className={inputClass} />
+            </label>
+            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+              Mes
+              <input name="month" type="month" defaultValue={range.month} className={inputClass} />
+            </label>
+            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+              Inicio
+              <input name="startDate" type="date" defaultValue={range.startDate} className={inputClass} />
+            </label>
+            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+              Fim
+              <input name="endDate" type="date" defaultValue={range.endDate} className={inputClass} />
+            </label>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button type="submit">Aplicar filtros</Button>
+            <a href={`/api/internal/reports/export?format=csv&${exportQuery}`} className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary">
+              <Download className="mr-2 h-4 w-4" /> Excel
+            </a>
+            <a href={`/api/internal/reports/export?format=html&${exportQuery}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary">
+              <Download className="mr-2 h-4 w-4" /> PDF
+            </a>
+            <span className="text-sm font-bold text-white/55">{range.label}</span>
+          </div>
+        </form>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {[["Receita do mes", metrics.grossRevenue], ["Despesas pagas do mes", metrics.paidExpenses], ["Lucro liquido", metrics.netProfit]].map(([label, value]) => (
+          {[["Receita do periodo", metrics.grossRevenue], ["Despesas pagas do periodo", metrics.paidExpenses], ["Lucro liquido", metrics.netProfit]].map(([label, value]) => (
             <article key={String(label)} className="rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
               <p className="text-sm uppercase text-white/55">{label}</p>
               <strong className="mt-2 block text-3xl text-primary">{formatCurrency(Number(value))}</strong>

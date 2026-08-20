@@ -74,6 +74,7 @@ export default async function BarberReportPage({ searchParams }: PageProps) {
             <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
               Periodo
               <select name="period" defaultValue={report.filters.period ?? "month-current"} className={inputClass}>
+                <option value="day">Dia especifico</option>
                 <option value="week-current">Semana atual</option>
                 <option value="week-previous">Semana anterior</option>
                 <option value="fortnight-current">Quinzena atual</option>
@@ -82,6 +83,10 @@ export default async function BarberReportPage({ searchParams }: PageProps) {
                 <option value="month-previous">Mes anterior</option>
                 <option value="custom">Personalizado</option>
               </select>
+            </label>
+            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+              Dia especifico
+              <input name="date" type="date" defaultValue={report.filters.date} className={inputClass} />
             </label>
             <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
               Inicio

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -59,8 +60,16 @@ type ExpenseForm = {
 type FinanceExpensePanelProps = {
   categories: ExpenseCategory[];
   expenses: ExpenseItem[];
-  monthRevenue: number;
-  monthExpenses: number;
+  periodFilter: {
+    period: string;
+    date: string;
+    month: string;
+    startDate: string;
+    endDate: string;
+    label: string;
+  };
+  periodRevenue: number;
+  periodExpenses: number;
   annualRevenue: number;
   annualExpenses: number;
   overdueCount: number;
@@ -187,8 +196,9 @@ function SelectControl({
 export function FinanceExpensePanel({
   categories,
   expenses,
-  monthRevenue,
-  monthExpenses,
+  periodFilter,
+  periodRevenue,
+  periodExpenses,
   annualRevenue,
   annualExpenses,
   overdueCount,
@@ -225,9 +235,10 @@ export function FinanceExpensePanel({
     .reduce((sum, expense) => sum + expense.amount, 0);
   const pendingApprovalExpenses = expenses.filter((expense) => expense.status === "PENDING");
   const paidAmount = expenses.filter((expense) => expense.status === "PAID").reduce((sum, expense) => sum + expense.amount, 0);
-  const monthProfit = monthRevenue - monthExpenses;
+  const monthProfit = periodRevenue - periodExpenses;
   const annualProfit = annualRevenue - annualExpenses;
-  const monthMargin = monthRevenue > 0 ? (monthProfit / monthRevenue) * 100 : 0;
+  const monthMargin = periodRevenue > 0 ? (monthProfit / periodRevenue) * 100 : 0;
+  const exportQuery = `period=${periodFilter.period}&date=${periodFilter.date}&month=${periodFilter.month}&startDate=${periodFilter.startDate}&endDate=${periodFilter.endDate}`;
 
   function resetForm() {
     setMessage("");
@@ -343,23 +354,60 @@ export function FinanceExpensePanel({
             <ReceiptText className="mr-2 h-4 w-4" />
             Despesa pontual
           </Button>
-          <a href="/api/internal/reports/export?format=csv" className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
+          <a href={`/api/internal/reports/export?format=csv&${exportQuery}`} className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
             <Download className="mr-2 h-4 w-4" />
             Excel
           </a>
-          <a href="/api/internal/reports/export?format=html" target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
+          <a href={`/api/internal/reports/export?format=html&${exportQuery}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
             <Download className="mr-2 h-4 w-4" />
             PDF
           </a>
         </div>
       </div>
 
+      <form className="mt-6 rounded-[10px] border border-white/10 bg-black/25 p-4" action="/admin/financeiro">
+        <div className="grid gap-4 md:grid-cols-5">
+          <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+            Periodo
+            <select name="period" defaultValue={periodFilter.period} className={inputClass}>
+              <option value="day">Dia</option>
+              <option value="week">Semana</option>
+              <option value="month">Mes</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+            Dia
+            <input name="date" type="date" defaultValue={periodFilter.date} className={inputClass} />
+          </label>
+          <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+            Mes
+            <input name="month" type="month" defaultValue={periodFilter.month} className={inputClass} />
+          </label>
+          <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+            Inicio
+            <input name="startDate" type="date" defaultValue={periodFilter.startDate} className={inputClass} />
+          </label>
+          <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+            Fim
+            <input name="endDate" type="date" defaultValue={periodFilter.endDate} className={inputClass} />
+          </label>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button type="submit">Aplicar periodo</Button>
+          <Link href="/admin/financeiro" className="inline-flex min-h-11 items-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black">
+            Limpar periodo
+          </Link>
+          <span className="text-sm font-bold text-white/55">{periodFilter.label}</span>
+        </div>
+      </form>
+
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Receita do mes", value: monthRevenue, icon: TrendingUp },
-          { label: "Despesas do mes", value: monthExpenses, icon: TrendingDown },
+          { label: "Receita do periodo", value: periodRevenue, icon: TrendingUp },
+          { label: "Despesas do periodo", value: periodExpenses, icon: TrendingDown },
           { label: "Lucro liquido", value: monthProfit, icon: PiggyBank },
-          { label: "Margem do mes", value: `${monthMargin.toFixed(1).replace(".", ",")}%`, icon: Banknote }
+          { label: "Margem do periodo", value: `${monthMargin.toFixed(1).replace(".", ",")}%`, icon: Banknote }
         ].map((card) => (
           <article key={card.label} className="rounded-[10px] border border-white/10 bg-black/30 p-4">
             <card.icon className="h-5 w-5 text-primary" />

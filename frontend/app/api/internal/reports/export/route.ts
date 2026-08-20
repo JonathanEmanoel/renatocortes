@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
+import { resolvePeriodRange } from "@/lib/server/date-periods";
 import { getFinanceMetrics } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
@@ -19,21 +20,24 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const format = searchParams.get("format") ?? "csv";
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  monthStart.setHours(0, 0, 0, 0);
-  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1);
+  const range = resolvePeriodRange({
+    period: searchParams.get("period") ?? undefined,
+    date: searchParams.get("date") ?? undefined,
+    month: searchParams.get("month") ?? undefined,
+    startDate: searchParams.get("startDate") ?? undefined,
+    endDate: searchParams.get("endDate") ?? undefined
+  });
 
   const [metrics, expenses, completedAppointments, products] = await Promise.all([
-    getFinanceMetrics(monthStart, monthEnd),
-    prisma.expense.findMany({ where: { paidAt: { gte: monthStart, lt: monthEnd }, status: "PAID", deletedAt: null }, include: { category: true }, orderBy: { paidAt: "asc" } }),
+    getFinanceMetrics(range.start, range.end),
+    prisma.expense.findMany({ where: { paidAt: { gte: range.start, lte: range.end }, status: "PAID", deletedAt: null }, include: { category: true }, orderBy: { paidAt: "asc" } }),
     prisma.appointment.findMany({
-      where: { dataHora: { gte: monthStart, lt: monthEnd }, status: "COMPLETED", deletedAt: null },
+      where: { dataHora: { gte: range.start, lte: range.end }, status: "COMPLETED", deletedAt: null },
       include: { service: true, services: { include: { service: true } } }
     }),
     prisma.saleItem.groupBy({
       by: ["productId"],
-      where: { sale: { status: "COMPLETED", completedAt: { gte: monthStart, lt: monthEnd }, deletedAt: null } },
+      where: { sale: { status: "COMPLETED", completedAt: { gte: range.start, lte: range.end }, deletedAt: null } },
       _sum: { quantity: true }
     })
   ]);
@@ -67,8 +71,9 @@ export async function GET(request: Request) {
 </head>
 <body>
   <h1>Relatório financeiro</h1>
-  <p>Receita do mês: <strong>${formatCurrency(metrics.grossRevenue)}</strong></p>
-  <p>Despesas pagas do mês: <strong>${formatCurrency(metrics.paidExpenses)}</strong></p>
+  <p>Período: <strong>${range.label}</strong></p>
+  <p>Receita do período: <strong>${formatCurrency(metrics.grossRevenue)}</strong></p>
+  <p>Despesas pagas do período: <strong>${formatCurrency(metrics.paidExpenses)}</strong></p>
   <p>Lucro líquido: <strong>${formatCurrency(metrics.netProfit)}</strong></p>
   <h2>Despesas</h2>
   <table><thead><tr><th>Nome</th><th>Categoria</th><th>Valor</th><th>Status</th></tr></thead><tbody>
@@ -89,8 +94,9 @@ export async function GET(request: Request) {
 
   const rows = [
     ["Tipo", "Nome", "Categoria", "Quantidade", "Valor", "Status"],
-    ["Resumo", "Receita do mês", "", "", metrics.grossRevenue, ""],
-    ["Resumo", "Despesas pagas do mês", "", "", metrics.paidExpenses, ""],
+    ["Resumo", `Periodo: ${range.label}`, "", "", "", ""],
+    ["Resumo", "Receita do periodo", "", "", metrics.grossRevenue, ""],
+    ["Resumo", "Despesas pagas do periodo", "", "", metrics.paidExpenses, ""],
     ["Resumo", "Lucro líquido", "", "", metrics.netProfit, ""],
     ...expenses.map((expense) => ["Despesa", expense.name, expense.category?.name ?? "", "", Number(expense.amount), expense.status]),
     ...services.map((item) => ["Serviço", item.name, "", item.count, "", ""]),

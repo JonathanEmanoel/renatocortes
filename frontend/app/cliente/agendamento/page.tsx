@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatShortDatePtBr } from "@/lib/format";
+import { addDaysInput, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { SchedulingForm } from "./scheduling-form";
 import type { Barber } from "@/types/client-area";
 import { getAuthenticatedClient } from "@/lib/server/auth";
@@ -23,13 +24,15 @@ const serviceOrder = [
 
 function buildDates() {
   const formatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
+  const weekDayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
+  const today = todayDateInput();
   return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() + index);
-    const value = date.toISOString().slice(0, 10);
+    const value = addDaysInput(today, index + 1);
+    const date = startOfSaoPauloDay(value);
+    const weekDay = weekDayFormatter.format(date).replace(".", "").toUpperCase();
     return {
       value,
-      label: formatShortDatePtBr(date).replace(".", ""),
+      label: `${weekDay} ${formatShortDatePtBr(date).replace(".", "")}`,
       monthLabel: formatter.format(date)
     };
   });

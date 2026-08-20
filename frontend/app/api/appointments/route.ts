@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { buildCalendarEvent, buildGoogleCalendarAuthUrl } from "@/lib/google-calendar";
 import { getAuthenticatedClient } from "@/lib/server/auth";
+import { isSameOrBeforeToday } from "@/lib/server/date-periods";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { formatDatePtBr, formatTimePtBr } from "@/lib/format";
 
@@ -66,6 +67,10 @@ async function validateAvailability(input: {
   excludeAppointmentId?: string;
 }) {
   const appointmentDate = createDateTime(input.date, input.time);
+
+  if (isSameOrBeforeToday(input.date)) {
+    return { ok: false as const, message: "Agendamentos pelo site devem ser feitos a partir de amanha." };
+  }
 
   if (Number.isNaN(appointmentDate.getTime()) || appointmentDate <= new Date()) {
     return { ok: false as const, message: "Escolha uma data e horario futuros." };

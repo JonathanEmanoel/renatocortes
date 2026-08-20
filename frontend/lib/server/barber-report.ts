@@ -10,6 +10,7 @@ import {
   hasActiveSubscriptionAt,
   productItemsCommission
 } from "@/lib/server/finance-rules";
+import { addDaysInput, endOfSaoPauloDay, resolvePeriodRange, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 
 export const reportTypeOptions = ["site", "manual", "subscription", "sales"] as const;
 export type ReportType = (typeof reportTypeOptions)[number];
@@ -20,6 +21,7 @@ export type BarberReportPeriod = ReturnType<typeof resolveReportPeriod>;
 export type BarberReportFilters = {
   barberId?: string;
   period?: string;
+  date?: string;
   startDate?: string;
   endDate?: string;
   types: ReportType[];
@@ -49,6 +51,7 @@ export function parseBarberReportFilters(params: URLSearchParams | Record<string
   return {
     barberId: getOne("barberId"),
     period: getOne("period") ?? "month-current",
+    date: getOne("date"),
     startDate: getOne("startDate"),
     endDate: getOne("endDate"),
     types: selectedTypes.length > 0 ? selectedTypes : [...reportTypeOptions],
@@ -88,19 +91,6 @@ function dayEnd(date: Date) {
   return next;
 }
 
-function startOfWeek(date: Date) {
-  const next = dayStart(date);
-  const day = next.getDay() || 7;
-  next.setDate(next.getDate() - day + 1);
-  return next;
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
 function currentFortnight(date: Date) {
   const start = date.getDate() <= 15 ? new Date(date.getFullYear(), date.getMonth(), 1) : new Date(date.getFullYear(), date.getMonth(), 16);
   const end = date.getDate() <= 15 ? new Date(date.getFullYear(), date.getMonth(), 15) : new Date(date.getFullYear(), date.getMonth() + 1, 0);
@@ -116,25 +106,38 @@ function previousFortnight(date: Date) {
   return { start: dayStart(new Date(date.getFullYear(), date.getMonth(), 1)), end: dayEnd(new Date(date.getFullYear(), date.getMonth(), 15)), label: "1a quinzena anterior" };
 }
 
-export function resolveReportPeriod(filters: Pick<BarberReportFilters, "period" | "startDate" | "endDate">) {
+export function resolveReportPeriod(filters: Pick<BarberReportFilters, "period" | "date" | "startDate" | "endDate">) {
   const now = new Date();
   const period = filters.period || "month-current";
 
-  if (period === "custom" && filters.startDate && filters.endDate) {
-    return { start: dayStart(new Date(`${filters.startDate}T00:00:00`)), end: dayEnd(new Date(`${filters.endDate}T00:00:00`)), label: "Personalizado" };
+  if (period === "day") {
+    const date = filters.date || todayDateInput();
+    return { start: startOfSaoPauloDay(date), end: endOfSaoPauloDay(date), label: `Dia ${startOfSaoPauloDay(date).toLocaleDateString("pt-BR")}` };
   }
-  if (period === "week-current") return { start: startOfWeek(now), end: dayEnd(addDays(startOfWeek(now), 6)), label: "Semana atual" };
+  if (period === "custom" && filters.startDate && filters.endDate) {
+    return { start: startOfSaoPauloDay(filters.startDate), end: endOfSaoPauloDay(filters.endDate), label: "Personalizado" };
+  }
+  if (period === "week-current") {
+    const range = resolvePeriodRange({ period: "week" });
+    return { start: range.start, end: range.end, label: "Semana atual" };
+  }
   if (period === "week-previous") {
-    const start = addDays(startOfWeek(now), -7);
-    return { start, end: dayEnd(addDays(start, 6)), label: "Semana anterior" };
+    const currentWeek = resolvePeriodRange({ period: "week" });
+    const startDate = addDaysInput(currentWeek.startDate, -7);
+    const endDate = addDaysInput(startDate, 6);
+    return { start: startOfSaoPauloDay(startDate), end: endOfSaoPauloDay(endDate), label: "Semana anterior" };
   }
   if (period === "fortnight-current") return currentFortnight(now);
   if (period === "fortnight-previous") return previousFortnight(now);
   if (period === "month-previous") {
-    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    return { start: dayStart(start), end: dayEnd(new Date(now.getFullYear(), now.getMonth(), 0)), label: "Mes anterior" };
+    const currentMonth = todayDateInput().slice(0, 7);
+    const [year, month] = currentMonth.split("-").map(Number);
+    const previous = `${month === 1 ? year - 1 : year}-${String(month === 1 ? 12 : month - 1).padStart(2, "0")}`;
+    const range = resolvePeriodRange({ period: "month", month: previous });
+    return { start: range.start, end: range.end, label: "Mes anterior" };
   }
-  return { start: dayStart(new Date(now.getFullYear(), now.getMonth(), 1)), end: dayEnd(new Date(now.getFullYear(), now.getMonth() + 1, 0)), label: "Mes atual" };
+  const range = resolvePeriodRange({ period: "month" });
+  return { start: range.start, end: range.end, label: "Mes atual" };
 }
 
 function shortId(prefix: string, id: string) {
