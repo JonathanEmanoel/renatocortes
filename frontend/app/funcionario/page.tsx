@@ -19,8 +19,8 @@ import { BarberPanelActionTabs } from "@/components/internal/barber-panel-action
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
-import { SERVICE_COMMISSION_PERCENT, appointmentGross } from "@/lib/server/finance-rules";
-import { getBarberReport, reportTypeOptions } from "@/lib/server/barber-report";
+import { getBarberDailySeries, getBarberReport, reportTypeOptions } from "@/lib/server/barber-report";
+import { endOfSaoPauloDay, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 import { cn } from "@/utils/cn";
 
@@ -28,48 +28,15 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-type PeriodKey = "today" | "week" | "fortnight" | "month";
-type ChartRange = 7 | 15 | 30;
+type PeriodKey = "today" | "week" | "fortnight" | "month" | "custom";
 
 const periodOptions: { key: PeriodKey; label: string; reportPeriod: string }[] = [
-  { key: "today", label: "Hoje", reportPeriod: "custom" },
+  { key: "today", label: "Hoje", reportPeriod: "today" },
   { key: "week", label: "Semana", reportPeriod: "week-current" },
   { key: "fortnight", label: "Quinzena", reportPeriod: "fortnight-current" },
-  { key: "month", label: "Mes", reportPeriod: "month-current" }
+  { key: "month", label: "Mes", reportPeriod: "month-current" },
+  { key: "custom", label: "Personalizado", reportPeriod: "custom" }
 ];
-
-function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function endOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
-}
-
-function addDays(date: Date, days: number) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function dateInputValue(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function localDateKey(date: Date) {
-  return dateInputValue(date);
-}
-
-function appointmentRevenue(appointment: { service: { price: unknown }; services?: { price: unknown }[] }) {
-  return appointmentGross(appointment);
-}
 
 function appointmentServicesLabel(appointment: { service: { name: string }; services?: { service: { name: string } }[] }) {
   const services = appointment.services ?? [];
@@ -89,34 +56,13 @@ function statusLabel(status: string) {
   return labels[status] ?? status;
 }
 
-function hrefForPeriod(period: PeriodKey, chart: ChartRange) {
-  const params = new URLSearchParams({ period, chart: String(chart) });
+function hrefForPeriod(period: PeriodKey, startDate?: string, endDate?: string) {
+  const params = new URLSearchParams({ period });
+  if (period === "custom") {
+    params.set("startDate", startDate ?? todayDateInput());
+    params.set("endDate", endDate ?? startDate ?? todayDateInput());
+  }
   return `/funcionario?${params.toString()}`;
-}
-
-function dailySeries(
-  days: ChartRange,
-  appointments: { dataHora: Date; service: { price: unknown }; services?: { price: unknown }[] }[],
-  manualServices: { amount: unknown; createdAt: Date }[]
-) {
-  return Array.from({ length: days }).map((_, index) => {
-    const date = startOfDay(addDays(new Date(), -(days - 1 - index)));
-    const key = localDateKey(date);
-    const dayAppointments = appointments.filter((appointment) => localDateKey(appointment.dataHora) === key);
-    const dayManualServices = manualServices.filter((commission) => localDateKey(commission.createdAt) === key);
-    const manualRevenue = dayManualServices.reduce((sum, commission) => sum + Number(commission.amount) / (SERVICE_COMMISSION_PERCENT / 100), 0);
-    const revenue = dayAppointments.reduce((sum, appointment) => sum + appointmentRevenue(appointment), 0) + manualRevenue;
-
-    return {
-      label: date.toLocaleDateString("pt-BR", { weekday: "short" }),
-      dateLabel: date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-      count: dayAppointments.length + dayManualServices.length,
-      siteCount: dayAppointments.length,
-      manualCount: dayManualServices.length,
-      revenue,
-      commission: revenue * (SERVICE_COMMISSION_PERCENT / 100)
-    };
-  });
 }
 
 function distinctAttendedClients(report: Awaited<ReturnType<typeof getBarberReport>>) {
@@ -148,23 +94,25 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
 
   const params = (await searchParams) ?? {};
   const requestedPeriod = Array.isArray(params.period) ? params.period[0] : params.period;
-  const selectedPeriod: PeriodKey = requestedPeriod === "today" || requestedPeriod === "week" || requestedPeriod === "fortnight" || requestedPeriod === "month"
+  const selectedPeriod: PeriodKey = requestedPeriod === "today" || requestedPeriod === "week" || requestedPeriod === "fortnight" || requestedPeriod === "month" || requestedPeriod === "custom"
     ? requestedPeriod
     : "today";
-  const requestedChart = Number(Array.isArray(params.chart) ? params.chart[0] : params.chart);
-  const chartDays: ChartRange = requestedChart === 15 || requestedChart === 30 ? requestedChart : 7;
   const periodConfig = periodOptions.find((period) => period.key === selectedPeriod) ?? periodOptions[0];
 
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
-  const chartStart = startOfDay(addDays(now, -(chartDays - 1)));
+  const today = todayDateInput();
+  const todayStart = startOfSaoPauloDay(today);
+  const todayEnd = endOfSaoPauloDay(today);
+  const requestedStartDate = Array.isArray(params.startDate) ? params.startDate[0] : params.startDate;
+  const requestedEndDate = Array.isArray(params.endDate) ? params.endDate[0] : params.endDate;
+  const customStartDate = requestedStartDate || today;
+  const customEndDate = requestedEndDate || customStartDate;
 
   const reportFilters = {
     barberId,
     period: periodConfig.reportPeriod,
-    startDate: selectedPeriod === "today" ? dateInputValue(todayStart) : undefined,
-    endDate: selectedPeriod === "today" ? dateInputValue(todayStart) : undefined,
+    startDate: selectedPeriod === "custom" ? customStartDate : undefined,
+    endDate: selectedPeriod === "custom" ? customEndDate : undefined,
     types: [...reportTypeOptions],
     productType: "all" as const,
     commission: "all" as const
@@ -173,8 +121,6 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
   const report = await getBarberReport(reportFilters);
   const [
     todayAppointments,
-    chartAppointments,
-    chartManualServices,
     availabilityDays,
     serviceOptions,
     productOptions
@@ -184,15 +130,6 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
       include: { client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } }, service: true, services: { include: { service: true } } },
       orderBy: { dataHora: "asc" },
       take: 20
-    }),
-    prisma.appointment.findMany({
-      where: { barberId, dataHora: { gte: chartStart, lte: todayEnd }, status: "COMPLETED", deletedAt: null },
-      include: { service: true, services: true },
-      orderBy: { dataHora: "asc" }
-    }),
-    prisma.employeeCommission.findMany({
-      where: { barberId, createdAt: { gte: chartStart, lte: todayEnd }, appointmentId: null, saleId: null },
-      select: { amount: true, createdAt: true }
     }),
     prisma.barberAvailability.findMany({
       where: { barberId, active: true, deletedAt: null },
@@ -215,7 +152,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
   const attendedClients = distinctAttendedClients(report);
   const nextAppointment = todayAppointments.find((appointment) => ["PENDING", "CONFIRMED"].includes(appointment.status) && appointment.dataHora >= now);
   const remainingTodayAppointments = todayAppointments.filter((appointment) => appointment.id !== nextAppointment?.id);
-  const series = dailySeries(chartDays, chartAppointments, chartManualServices);
+  const series = getBarberDailySeries(report);
   const maxSeriesValue = Math.max(...series.map((item) => item.count), 1);
 
   const mainStats = [
@@ -253,11 +190,11 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                 {report.period.start.toLocaleDateString("pt-BR")} a {report.period.end.toLocaleDateString("pt-BR")}
               </p>
             </div>
-            <nav className="grid gap-2 sm:grid-cols-4">
+            <nav className="grid gap-2 sm:grid-cols-3 xl:grid-cols-5">
               {periodOptions.map((period) => (
                 <Link
                   key={period.key}
-                  href={hrefForPeriod(period.key, chartDays)}
+                  href={hrefForPeriod(period.key, customStartDate, customEndDate)}
                   className={cn(
                     "inline-flex min-h-11 items-center justify-center rounded-[10px] border px-4 text-sm font-black uppercase transition",
                     selectedPeriod === period.key
@@ -270,6 +207,48 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
               ))}
             </nav>
           </div>
+          {selectedPeriod === "custom" ? (
+            <form action="/funcionario" className="mt-5 rounded-[12px] border border-primary/20 bg-black/30 p-4">
+              <input type="hidden" name="period" value="custom" />
+              <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto_auto] md:items-end">
+                <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                  Data inicial
+                  <input
+                    name="startDate"
+                    type="date"
+                    defaultValue={customStartDate}
+                    className="min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none transition focus:border-primary"
+                  />
+                </label>
+                <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                  Data final
+                  <input
+                    name="endDate"
+                    type="date"
+                    defaultValue={customEndDate}
+                    className="min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none transition focus:border-primary"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="inline-flex min-h-12 items-center justify-center rounded-[10px] bg-primary px-5 text-sm font-black uppercase text-black transition hover:brightness-110"
+                >
+                  Aplicar periodo
+                </button>
+                <Link
+                  href="/funcionario?period=today"
+                  className="inline-flex min-h-12 items-center justify-center rounded-[10px] border border-primary/40 px-5 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black"
+                >
+                  Limpar
+                </Link>
+              </div>
+              {report.period.invalid && report.period.error ? (
+                <p className="mt-4 rounded-[10px] border border-red-500/40 bg-red-500/10 p-3 text-sm font-bold text-red-200">
+                  {report.period.error}
+                </p>
+              ) : null}
+            </form>
+          ) : null}
         </section>
 
         <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -294,7 +273,11 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
             </div>
             {session.user.role === "ADMIN" || session.user.role === "DEVELOPER" ? (
               <Link
-                href={`/admin/equipe/relatorio?barberId=${barberId}&period=${periodConfig.reportPeriod}`}
+                href={`/admin/equipe/relatorio?${new URLSearchParams({
+                  barberId,
+                  period: periodConfig.reportPeriod,
+                  ...(selectedPeriod === "custom" ? { startDate: customStartDate, endDate: customEndDate } : {})
+                }).toString()}`}
                 className="inline-flex min-h-11 items-center justify-center rounded-[10px] border border-primary/40 px-4 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black"
               >
                 Ver meu relatorio completo
@@ -413,26 +396,16 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-xl font-black uppercase">Atendimentos por dia</h2>
-              <p className="mt-1 text-sm text-white/55">Agendamentos concluidos e atendimentos avulsos dos ultimos {chartDays} dias.</p>
+              <p className="mt-1 text-sm text-white/55">Agendamentos concluidos, assinantes atendidos e atendimentos avulsos do periodo selecionado.</p>
             </div>
-            <nav className="grid gap-2 sm:grid-cols-3">
-              {[7, 15, 30].map((days) => (
-                <Link
-                  key={days}
-                  href={hrefForPeriod(selectedPeriod, days as ChartRange)}
-                  className={cn(
-                    "inline-flex min-h-10 items-center justify-center rounded-[10px] border px-4 text-xs font-black uppercase transition",
-                    chartDays === days ? "border-primary bg-primary text-black" : "border-primary/30 bg-black/30 text-primary hover:bg-primary hover:text-black"
-                  )}
-                >
-                  {days} dias
-                </Link>
-              ))}
-            </nav>
+            <p className="rounded-[10px] border border-primary/20 bg-primary/10 px-4 py-2 text-sm font-black uppercase text-primary">
+              {report.period.start.toLocaleDateString("pt-BR")} a {report.period.end.toLocaleDateString("pt-BR")}
+            </p>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-7">
+          <div className="mt-5 overflow-x-auto pb-2">
+            <div className="flex min-w-full gap-3">
             {series.map((item) => (
-              <div key={`${item.label}-${item.dateLabel}`} className="rounded-[10px] border border-white/10 bg-black/30 p-3 text-center">
+              <div key={`${item.label}-${item.dateLabel}`} className="min-w-[150px] flex-1 rounded-[10px] border border-white/10 bg-black/30 p-3 text-center">
                 <div className="mx-auto flex h-24 w-8 items-end rounded-full bg-white/10">
                   <div className="w-full rounded-full bg-primary" style={{ height: `${Math.max(8, (item.count / maxSeriesValue) * 100)}%` }} />
                 </div>
@@ -440,9 +413,11 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                 <p className="text-xs font-black text-white">{item.dateLabel}</p>
                 <strong className="text-primary">{item.count}</strong>
                 <p className="text-[11px] text-white/45">{item.siteCount} site / {item.manualCount} avulso</p>
+                <p className="text-[11px] text-white/45">{item.subscriptionCount} assinante</p>
                 <p className="text-[11px] text-white/45">{formatCurrency(item.revenue)}</p>
               </div>
             ))}
+            </div>
           </div>
         </section>
 

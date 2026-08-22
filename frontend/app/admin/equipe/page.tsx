@@ -8,12 +8,13 @@ import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getBarberFinancialSummary } from "@/lib/server/barber-report";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export default async function AdminTeamPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/equipe");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const barbers = await prisma.barber.findMany({
     where: { active: true, deletedAt: null },

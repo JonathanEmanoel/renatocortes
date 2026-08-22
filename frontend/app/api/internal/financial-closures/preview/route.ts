@@ -7,21 +7,31 @@ import {
   hasActiveSubscriptionAt
 } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+import {
+  addDaysInput,
+  endOfSaoPauloDay,
+  resolveWeeklyCashClosingRange,
+  startOfSaoPauloDay,
+  todayDateInput
+} from "@/lib/server/date-periods";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 function getRange(period: string) {
-  const endDate = new Date();
-  endDate.setHours(23, 59, 59, 999);
-  const startDate = new Date(endDate);
+  const today = todayDateInput();
 
-  if (period === "MONTHLY") startDate.setMonth(startDate.getMonth() - 1);
-  else if (period === "BIWEEKLY") startDate.setDate(startDate.getDate() - 14);
-  else startDate.setDate(startDate.getDate() - 7);
+  if (period === "WEEKLY") {
+    const range = resolveWeeklyCashClosingRange(today);
+    return { startDate: range.start, endDate: range.end };
+  }
 
-  startDate.setHours(0, 0, 0, 0);
-  return { startDate, endDate };
+  const daysBack = period === "BIWEEKLY" ? 13 : 29;
+  const startDateInput = addDaysInput(today, -daysBack);
+  return {
+    startDate: startOfSaoPauloDay(startDateInput),
+    endDate: endOfSaoPauloDay(today)
+  };
 }
 
 export async function GET(request: Request) {

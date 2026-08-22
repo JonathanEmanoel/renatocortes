@@ -4,12 +4,13 @@ export const revalidate = 0;
 import { redirect } from "next/navigation";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { InternalProfileForm } from "@/components/internal/internal-profile-form";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export default async function AdminProfilePage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/perfil");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">

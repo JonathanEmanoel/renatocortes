@@ -12,5 +12,5 @@ export default async function HomePage() {
     redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
   }
 
-  redirect("/cliente");
+  redirect("/login");
 }

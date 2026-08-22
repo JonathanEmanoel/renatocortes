@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { ProductManagementPanel } from "@/components/internal/product-management-panel";
 import { prisma } from "@/lib/prisma";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const defaultProductCategories = [
@@ -30,7 +31,7 @@ function normalizeCategoryName(name: string) {
 export default async function AdminProductsPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/produtos");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   await Promise.all(
     defaultProductCategories.map((name) =>

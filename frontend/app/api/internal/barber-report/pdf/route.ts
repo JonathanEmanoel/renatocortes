@@ -99,6 +99,9 @@ export async function GET(request: NextRequest) {
   }
 
   const report = await getBarberReport(parseBarberReportFilters(request.nextUrl.searchParams));
+  if (report.period.invalid) {
+    return NextResponse.json({ error: report.period.error ?? "Periodo invalido." }, { status: 400 });
+  }
   const pdf = buildPdf(reportLines(report));
 
   return new NextResponse(pdf, {

@@ -7,6 +7,7 @@ import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { prisma } from "@/lib/prisma";
 import { resolvePeriodRange } from "@/lib/server/date-periods";
 import { getFinanceMetrics } from "@/lib/server/finance-rules";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 type PageProps = {
@@ -20,7 +21,7 @@ function firstParam(value: string | string[] | undefined) {
 export default async function AdminFinancePage({ searchParams }: PageProps) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/financeiro");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const params = (await searchParams) ?? {};
   const selectedRange = resolvePeriodRange({
@@ -40,12 +41,20 @@ export default async function AdminFinancePage({ searchParams }: PageProps) {
   const dueSoonEnd = new Date(todayStart);
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
 
-  const periodMetrics = await getFinanceMetrics(selectedRange.start, selectedRange.end);
+  const periodMetrics = selectedRange.invalid
+    ? { grossRevenue: 0, paidExpenses: 0 }
+    : await getFinanceMetrics(selectedRange.start, selectedRange.end);
   const annualMetrics = await getFinanceMetrics(yearStart, yearEnd);
-  const [expenseCategories, expenses, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
+  const [expenseCategories, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
     await Promise.all([
       prisma.expenseCategory.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
-      prisma.expense.findMany({
+      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { lt: todayStart }, deletedAt: null } }),
+      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
+      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lte: dueSoonEnd }, deletedAt: null } })
+    ]);
+  const expenses = selectedRange.invalid
+    ? []
+    : await prisma.expense.findMany({
         where: {
           deletedAt: null,
           OR: [
@@ -57,11 +66,7 @@ export default async function AdminFinancePage({ searchParams }: PageProps) {
         include: { category: true, createdBy: true },
         orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
         take: 80
-      }),
-      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { lt: todayStart }, deletedAt: null } }),
-      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
-      prisma.expense.count({ where: { status: { in: ["PENDING", "OVERDUE"] }, dueDate: { gte: todayStart, lte: dueSoonEnd }, deletedAt: null } })
-    ]);
+      });
 
   return (
     <main className="min-h-screen bg-barber-radial px-5 py-8 text-white">
@@ -96,7 +101,8 @@ export default async function AdminFinancePage({ searchParams }: PageProps) {
             month: selectedRange.month,
             startDate: selectedRange.startDate,
             endDate: selectedRange.endDate,
-            label: selectedRange.label
+            label: selectedRange.label,
+            error: selectedRange.error
           }}
           periodRevenue={periodMetrics.grossRevenue}
           periodExpenses={periodMetrics.paidExpenses}

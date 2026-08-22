@@ -8,6 +8,7 @@ import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import { getBarberReport, parseBarberReportFilters, type ReportType } from "@/lib/server/barber-report";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 type PageProps = {
@@ -15,6 +16,16 @@ type PageProps = {
 };
 
 const inputClass = "min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none transition focus:border-primary";
+const chipClass = "inline-flex min-h-11 items-center justify-center rounded-[10px] border px-4 text-sm font-black uppercase transition";
+
+const periodChoices = [
+  { value: "today", label: "Hoje" },
+  { value: "day", label: "Dia" },
+  { value: "week", label: "Semana" },
+  { value: "fortnight", label: "Quinzena" },
+  { value: "month", label: "Mes" },
+  { value: "custom", label: "Personalizado" }
+];
 
 function queryString(params: Record<string, string | string[] | undefined>) {
   const query = new URLSearchParams();
@@ -24,6 +35,25 @@ function queryString(params: Record<string, string | string[] | undefined>) {
     else query.set(key, value);
   });
   return query.toString();
+}
+
+function normalizePeriod(period?: string) {
+  if (period === "week-current" || period === "week-previous") return "week";
+  if (period === "fortnight-current" || period === "fortnight-previous") return "fortnight";
+  if (period === "month-current" || period === "month-previous") return "month";
+  if (period === "today" || period === "day" || period === "week" || period === "fortnight" || period === "month" || period === "custom") return period;
+  return "month";
+}
+
+function periodHref(params: Record<string, string | string[] | undefined>, period: string) {
+  return `/admin/equipe/relatorio?${queryString({
+    ...params,
+    period,
+    date: undefined,
+    month: undefined,
+    startDate: undefined,
+    endDate: undefined
+  })}`;
 }
 
 function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
@@ -41,10 +71,14 @@ function Section({ title, count, children }: { title: string; count: number; chi
 export default async function BarberReportPage({ searchParams }: PageProps) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/equipe/relatorio");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const params = (await searchParams) ?? {};
   const report = await getBarberReport(parseBarberReportFilters(params));
+  const selectedPeriod = normalizePeriod(report.filters.period);
+  const serviceLabel = report.filters.serviceId
+    ? report.options.services.find((service) => service.id === report.filters.serviceId)?.name ?? "Servico filtrado"
+    : "Todos os servicos";
   const pdfHref = `/api/internal/barber-report/pdf?${queryString({ ...params, barberId: report.barber.id })}`;
 
   return (
@@ -71,31 +105,61 @@ export default async function BarberReportPage({ searchParams }: PageProps) {
                 {report.options.barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}</option>)}
               </select>
             </label>
-            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
-              Periodo
-              <select name="period" defaultValue={report.filters.period ?? "month-current"} className={inputClass}>
-                <option value="day">Dia especifico</option>
-                <option value="week-current">Semana atual</option>
-                <option value="week-previous">Semana anterior</option>
-                <option value="fortnight-current">Quinzena atual</option>
-                <option value="fortnight-previous">Quinzena anterior</option>
-                <option value="month-current">Mes atual</option>
-                <option value="month-previous">Mes anterior</option>
-                <option value="custom">Personalizado</option>
-              </select>
-            </label>
-            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
-              Dia especifico
-              <input name="date" type="date" defaultValue={report.filters.date} className={inputClass} />
-            </label>
-            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
-              Inicio
-              <input name="startDate" type="date" defaultValue={report.filters.startDate} className={inputClass} />
-            </label>
-            <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
-              Fim
-              <input name="endDate" type="date" defaultValue={report.filters.endDate} className={inputClass} />
-            </label>
+            <div className="grid gap-3 md:col-span-2 xl:col-span-3">
+              <p className="text-sm font-bold uppercase text-white/70">Periodo</p>
+              <input type="hidden" name="period" value={selectedPeriod} />
+              <div className="flex flex-wrap gap-2">
+                {periodChoices.map((choice) => (
+                  <Link
+                    key={choice.value}
+                    href={periodHref(params, choice.value)}
+                    className={`${chipClass} ${
+                      selectedPeriod === choice.value
+                        ? "border-primary bg-primary text-black"
+                        : "border-primary/30 bg-black/30 text-primary hover:bg-primary hover:text-black"
+                    }`}
+                  >
+                    {choice.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            {selectedPeriod === "day" ? (
+              <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                Escolha a data
+                <input name="date" type="date" defaultValue={report.filters.date} className={inputClass} />
+              </label>
+            ) : null}
+            {selectedPeriod === "week" ? (
+              <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                Data de referencia da semana
+                <input name="date" type="date" defaultValue={report.filters.date} className={inputClass} />
+              </label>
+            ) : null}
+            {selectedPeriod === "fortnight" ? (
+              <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                Data de referencia da quinzena
+                <input name="date" type="date" defaultValue={report.filters.date} className={inputClass} />
+              </label>
+            ) : null}
+            {selectedPeriod === "month" ? (
+              <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                Mes e ano
+                <input name="month" type="month" defaultValue={report.filters.month} className={inputClass} />
+              </label>
+            ) : null}
+            {selectedPeriod === "custom" ? (
+              <>
+                <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                  Data inicial
+                  <input name="startDate" type="date" defaultValue={report.filters.startDate} className={inputClass} />
+                </label>
+                <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
+                  Data final
+                  <input name="endDate" type="date" defaultValue={report.filters.endDate} className={inputClass} />
+                </label>
+              </>
+            ) : null}
             <label className="grid gap-2 text-sm font-bold uppercase text-white/70">
               Servico
               <select name="serviceId" defaultValue={report.filters.serviceId ?? ""} className={inputClass}>
@@ -165,6 +229,12 @@ export default async function BarberReportPage({ searchParams }: PageProps) {
               Gerar PDF
             </a>
           </div>
+          {report.period.invalid && report.period.error ? (
+            <p className="mt-4 rounded-[10px] border border-red-500/40 bg-red-500/10 p-3 text-sm font-bold text-red-200">{report.period.error}</p>
+          ) : null}
+          <p className="mt-4 rounded-[10px] border border-primary/20 bg-primary/10 p-3 text-sm font-bold text-primary">
+            Exibindo: {report.barber.name} • {report.period.start.toLocaleDateString("pt-BR")} a {report.period.end.toLocaleDateString("pt-BR")} • {serviceLabel}
+          </p>
         </form>
 
         <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

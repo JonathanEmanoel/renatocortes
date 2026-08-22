@@ -9,6 +9,7 @@ import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { periodQuery, resolvePeriodRange } from "@/lib/server/date-periods";
 import { getFinanceMetrics } from "@/lib/server/finance-rules";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 type PageProps = {
@@ -24,7 +25,7 @@ const inputClass = "min-h-12 rounded-[10px] border border-primary/20 bg-black/45
 export default async function AdminReportsPage({ searchParams }: PageProps) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/relatorios");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const params = (await searchParams) ?? {};
   const range = resolvePeriodRange({
@@ -34,22 +35,28 @@ export default async function AdminReportsPage({ searchParams }: PageProps) {
     startDate: firstParam(params.startDate),
     endDate: firstParam(params.endDate)
   });
-  const metrics = await getFinanceMetrics(range.start, range.end);
+  const metrics = range.invalid
+    ? { grossRevenue: 0, paidExpenses: 0, netProfit: 0 }
+    : await getFinanceMetrics(range.start, range.end);
   const exportQuery = periodQuery(range);
-  const [completedAppointments, productsRanking, allProducts] = await Promise.all([
-    prisma.appointment.findMany({
-      where: { dataHora: { gte: range.start, lte: range.end }, status: "COMPLETED", deletedAt: null },
-      include: { service: true, services: { include: { service: true } } }
-    }),
-    prisma.saleItem.groupBy({
-      by: ["productId"],
-      where: { sale: { status: "COMPLETED", completedAt: { gte: range.start, lte: range.end }, deletedAt: null } },
-      _sum: { quantity: true },
-      orderBy: { _sum: { quantity: "desc" } },
-      take: 8
-    }),
-    prisma.product.findMany({ where: { deletedAt: null }, select: { id: true, name: true } })
-  ]);
+  const completedAppointments = range.invalid
+    ? []
+    : await prisma.appointment.findMany({
+        where: { dataHora: { gte: range.start, lte: range.end }, status: "COMPLETED", deletedAt: null },
+        include: { service: true, services: { include: { service: true } } }
+      });
+  const productsRanking = range.invalid
+    ? []
+    : await prisma.saleItem.groupBy({
+        by: ["productId"],
+        where: { sale: { status: "COMPLETED", completedAt: { gte: range.start, lte: range.end }, deletedAt: null } },
+        _sum: { quantity: true },
+        orderBy: { _sum: { quantity: "desc" } },
+        take: 8
+      });
+  const allProducts = range.invalid
+    ? []
+    : await prisma.product.findMany({ where: { deletedAt: null }, select: { id: true, name: true } });
 
   const productById = new Map(allProducts.map((product) => [product.id, product.name]));
   const serviceCounts = new Map<string, { name: string; count: number }>();
@@ -115,6 +122,9 @@ export default async function AdminReportsPage({ searchParams }: PageProps) {
             </a>
             <span className="text-sm font-bold text-white/55">{range.label}</span>
           </div>
+          {range.invalid && range.error ? (
+            <p className="mt-4 rounded-[10px] border border-red-500/40 bg-red-500/10 p-3 text-sm font-bold text-red-200">{range.error}</p>
+          ) : null}
         </form>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">

@@ -1,23 +1,20 @@
-import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/utils/supabase/server";
+import { getDashboardPath } from "@/lib/auth-routes";
+import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export async function getAuthenticatedClient() {
-  const cookieStore = await cookies();
-  const supabase = createClient(cookieStore);
-  const {
-    data: { user },
-    error
-  } = await supabase.auth.getUser();
+  const session = await getAuthenticatedUser();
 
-  if (error || !user?.id || !user.email) {
+  if (!session?.user.client || session.user.role !== "CLIENT") {
     return null;
   }
 
   const dbUser = await prisma.user.findFirst({
     where: {
-      authId: user.id,
+      id: session.user.id,
       deletedAt: null,
+      role: "CLIENT",
       active: true
     },
     include: {
@@ -35,9 +32,28 @@ export async function getAuthenticatedClient() {
   }
 
   return {
-    authUser: user,
+    authUser: session.authUser,
     user: dbUser,
     client: dbUser.client,
     address: dbUser.addresses[0] ?? null
   };
+}
+
+export async function requireAuthenticatedClient(redirectTo = "/cliente") {
+  const session = await getAuthenticatedUser();
+
+  if (!session) {
+    redirect(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
+  }
+
+  if (session.user.role !== "CLIENT" || !session.user.client) {
+    redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
+  }
+
+  const clientSession = await getAuthenticatedClient();
+  if (!clientSession) {
+    redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
+  }
+
+  return clientSession;
 }

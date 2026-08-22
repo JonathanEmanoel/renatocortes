@@ -28,6 +28,10 @@ export async function GET(request: Request) {
     endDate: searchParams.get("endDate") ?? undefined
   });
 
+  if (range.invalid) {
+    return NextResponse.json({ message: range.error ?? "Periodo invalido." }, { status: 400 });
+  }
+
   const [metrics, expenses, completedAppointments, products] = await Promise.all([
     getFinanceMetrics(range.start, range.end),
     prisma.expense.findMany({ where: { paidAt: { gte: range.start, lte: range.end }, status: "PAID", deletedAt: null }, include: { category: true }, orderBy: { paidAt: "asc" } }),

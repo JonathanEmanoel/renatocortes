@@ -5,12 +5,13 @@ import { redirect } from "next/navigation";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { PlanManagementPanel } from "@/components/internal/plan-management-panel";
 import { prisma } from "@/lib/prisma";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 export default async function AdminSettingsPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/configuracoes");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const plans = await prisma.subscriptionPlan.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } });
 

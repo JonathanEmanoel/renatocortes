@@ -6,6 +6,7 @@ import { AppointmentActionButtons } from "@/components/internal/appointment-acti
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 function servicesLabel(appointment: { service: { name: string }; services: { service: { name: string } }[] }) {
@@ -34,7 +35,7 @@ const historyStatuses = ["REJECTED", "CANCELED", "COMPLETED", "NO_SHOW"] as cons
 export default async function AdminAppointmentsPage({ searchParams }: AdminAppointmentsPageProps) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/agendamentos");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
   const filters = (await searchParams) ?? {};
 
   const since = new Date();

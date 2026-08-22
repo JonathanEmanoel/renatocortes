@@ -6,6 +6,7 @@ import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { SubscriptionActionButtons } from "@/components/internal/subscription-action-buttons";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 
@@ -33,7 +34,7 @@ function daysRemaining(endDate?: Date | null) {
 export default async function AdminSubscriptionsPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/assinaturas");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const now = new Date();
   const soon = new Date(now);

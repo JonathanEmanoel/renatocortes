@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { AvailabilityForm } from "@/components/internal/availability-form";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { prisma } from "@/lib/prisma";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const weekDays = [
@@ -20,7 +21,7 @@ const weekDays = [
 export default async function AdminAvailabilityPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/disponibilidade");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
 
   const barbers = await prisma.barber.findMany({
     where: { active: true, deletedAt: null },

@@ -6,6 +6,19 @@ export type PeriodFilter = {
   endDate?: string;
 };
 
+export type ResolvedPeriodRange = {
+  period: string;
+  date: string;
+  month: string;
+  startDate: string;
+  endDate: string;
+  start: Date;
+  end: Date;
+  label: string;
+  invalid?: boolean;
+  error?: string;
+};
+
 export const SAO_PAULO_OFFSET = "-03:00";
 
 function pad(value: number) {
@@ -45,6 +58,11 @@ export function isSameOrBeforeToday(value: string) {
   return value <= todayDateInput();
 }
 
+export function isValidDateOrder(startDate?: string, endDate?: string) {
+  if (!startDate || !endDate) return true;
+  return startDate <= endDate;
+}
+
 function firstDayOfMonth(month: string) {
   return `${month}-01`;
 }
@@ -62,7 +80,22 @@ function startOfWeekInput(anchor: string) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-export function resolvePeriodRange(filters: PeriodFilter = {}) {
+export function resolveWeeklyCashClosingRange(anchor = todayDateInput()) {
+  const date = new Date(`${anchor}T12:00:00${SAO_PAULO_OFFSET}`);
+  const daysUntilFriday = (5 - date.getDay() + 7) % 7;
+  const endDate = addDaysInput(anchor, daysUntilFriday);
+  const startDate = addDaysInput(endDate, -6);
+
+  return {
+    startDate,
+    endDate,
+    start: startOfSaoPauloDay(startDate),
+    end: endOfSaoPauloDay(endDate),
+    label: `Fechamento semanal ${startOfSaoPauloDay(startDate).toLocaleDateString("pt-BR")} a ${startOfSaoPauloDay(endDate).toLocaleDateString("pt-BR")}`
+  };
+}
+
+export function resolvePeriodRange(filters: PeriodFilter = {}): ResolvedPeriodRange {
   const today = todayDateInput();
   const currentMonth = today.slice(0, 7);
   const period = filters.period ?? "month";
@@ -82,8 +115,8 @@ export function resolvePeriodRange(filters: PeriodFilter = {}) {
   }
 
   if (period === "week") {
-    const startDate = filters.startDate || startOfWeekInput(today);
-    const endDate = filters.endDate || addDaysInput(startDate, 6);
+    const startDate = startOfWeekInput(filters.date || today);
+    const endDate = addDaysInput(startDate, 6);
     return {
       period,
       date: filters.date || today,
@@ -97,6 +130,21 @@ export function resolvePeriodRange(filters: PeriodFilter = {}) {
   }
 
   if (period === "custom" && filters.startDate && filters.endDate) {
+    if (!isValidDateOrder(filters.startDate, filters.endDate)) {
+      return {
+        period,
+        date: filters.date || today,
+        month: filters.month || currentMonth,
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        start: startOfSaoPauloDay(filters.startDate),
+        end: endOfSaoPauloDay(filters.startDate),
+        label: "Periodo personalizado invalido",
+        invalid: true,
+        error: "A data final nao pode ser anterior a data inicial."
+      };
+    }
+
     return {
       period,
       date: filters.date || today,

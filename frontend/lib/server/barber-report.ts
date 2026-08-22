@@ -10,7 +10,7 @@ import {
   hasActiveSubscriptionAt,
   productItemsCommission
 } from "@/lib/server/finance-rules";
-import { addDaysInput, endOfSaoPauloDay, resolvePeriodRange, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
+import { addDaysInput, dateInputFromDate, endOfSaoPauloDay, isValidDateOrder, resolvePeriodRange, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 
 export const reportTypeOptions = ["site", "manual", "subscription", "sales"] as const;
 export type ReportType = (typeof reportTypeOptions)[number];
@@ -22,6 +22,7 @@ export type BarberReportFilters = {
   barberId?: string;
   period?: string;
   date?: string;
+  month?: string;
   startDate?: string;
   endDate?: string;
   types: ReportType[];
@@ -52,6 +53,7 @@ export function parseBarberReportFilters(params: URLSearchParams | Record<string
     barberId: getOne("barberId"),
     period: getOne("period") ?? "month-current",
     date: getOne("date"),
+    month: getOne("month"),
     startDate: getOne("startDate"),
     endDate: getOne("endDate"),
     types: selectedTypes.length > 0 ? selectedTypes : [...reportTypeOptions],
@@ -79,43 +81,69 @@ function parseAuditMetadata(value: Prisma.JsonValue | null): ManualAuditMetadata
   };
 }
 
-function dayStart(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
+function lastDayOfMonthInput(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber, 0);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function dayEnd(date: Date) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
+function currentFortnight(anchor = todayDateInput()) {
+  const day = Number(anchor.slice(8, 10));
+  const month = anchor.slice(0, 7);
+  const startDate = day <= 15 ? `${month}-01` : `${month}-16`;
+  const endDate = day <= 15 ? `${month}-15` : lastDayOfMonthInput(month);
+  return {
+    start: startOfSaoPauloDay(startDate),
+    end: endOfSaoPauloDay(endDate),
+    label: day <= 15 ? "1a quinzena atual" : "2a quinzena atual"
+  };
 }
 
-function currentFortnight(date: Date) {
-  const start = date.getDate() <= 15 ? new Date(date.getFullYear(), date.getMonth(), 1) : new Date(date.getFullYear(), date.getMonth(), 16);
-  const end = date.getDate() <= 15 ? new Date(date.getFullYear(), date.getMonth(), 15) : new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  return { start: dayStart(start), end: dayEnd(end), label: date.getDate() <= 15 ? "1a quinzena atual" : "2a quinzena atual" };
-}
+function previousFortnight(anchor = todayDateInput()) {
+  const day = Number(anchor.slice(8, 10));
+  const month = anchor.slice(0, 7);
 
-function previousFortnight(date: Date) {
-  if (date.getDate() <= 15) {
-    const previousMonth = new Date(date.getFullYear(), date.getMonth() - 1, 1);
-    const end = new Date(previousMonth.getFullYear(), previousMonth.getMonth() + 1, 0);
-    return { start: dayStart(new Date(previousMonth.getFullYear(), previousMonth.getMonth(), 16)), end: dayEnd(end), label: "2a quinzena anterior" };
+  if (day <= 15) {
+    const [year, monthNumber] = month.split("-").map(Number);
+    const previousMonth = `${monthNumber === 1 ? year - 1 : year}-${String(monthNumber === 1 ? 12 : monthNumber - 1).padStart(2, "0")}`;
+    const startDate = `${previousMonth}-16`;
+    const endDate = lastDayOfMonthInput(previousMonth);
+    return { start: startOfSaoPauloDay(startDate), end: endOfSaoPauloDay(endDate), label: "2a quinzena anterior" };
   }
-  return { start: dayStart(new Date(date.getFullYear(), date.getMonth(), 1)), end: dayEnd(new Date(date.getFullYear(), date.getMonth(), 15)), label: "1a quinzena anterior" };
+
+  const startDate = `${month}-01`;
+  const endDate = `${month}-15`;
+  return { start: startOfSaoPauloDay(startDate), end: endOfSaoPauloDay(endDate), label: "1a quinzena anterior" };
 }
 
-export function resolveReportPeriod(filters: Pick<BarberReportFilters, "period" | "date" | "startDate" | "endDate">) {
-  const now = new Date();
+export function resolveReportPeriod(filters: Pick<BarberReportFilters, "period" | "date" | "month" | "startDate" | "endDate">) {
   const period = filters.period || "month-current";
 
+  if (period === "today") {
+    const date = todayDateInput();
+    return { start: startOfSaoPauloDay(date), end: endOfSaoPauloDay(date), label: "Hoje" };
+  }
   if (period === "day") {
     const date = filters.date || todayDateInput();
     return { start: startOfSaoPauloDay(date), end: endOfSaoPauloDay(date), label: `Dia ${startOfSaoPauloDay(date).toLocaleDateString("pt-BR")}` };
   }
-  if (period === "custom" && filters.startDate && filters.endDate) {
-    return { start: startOfSaoPauloDay(filters.startDate), end: endOfSaoPauloDay(filters.endDate), label: "Personalizado" };
+  if (period === "custom") {
+    const startDate = filters.startDate || todayDateInput();
+    const endDate = filters.endDate || startDate;
+    if (!isValidDateOrder(startDate, endDate)) {
+      return {
+        start: startOfSaoPauloDay(startDate),
+        end: endOfSaoPauloDay(startDate),
+        label: "Personalizado",
+        invalid: true,
+        error: "A data final nao pode ser anterior a data inicial."
+      };
+    }
+    return { start: startOfSaoPauloDay(startDate), end: endOfSaoPauloDay(endDate), label: "Personalizado" };
+  }
+  if (period === "week") {
+    const range = resolvePeriodRange({ period: "week", date: filters.date });
+    return { start: range.start, end: range.end, label: range.label };
   }
   if (period === "week-current") {
     const range = resolvePeriodRange({ period: "week" });
@@ -127,8 +155,13 @@ export function resolveReportPeriod(filters: Pick<BarberReportFilters, "period" 
     const endDate = addDaysInput(startDate, 6);
     return { start: startOfSaoPauloDay(startDate), end: endOfSaoPauloDay(endDate), label: "Semana anterior" };
   }
-  if (period === "fortnight-current") return currentFortnight(now);
-  if (period === "fortnight-previous") return previousFortnight(now);
+  if (period === "fortnight") return currentFortnight(filters.date || todayDateInput());
+  if (period === "fortnight-current") return currentFortnight();
+  if (period === "fortnight-previous") return previousFortnight();
+  if (period === "month") {
+    const range = resolvePeriodRange({ period: "month", month: filters.month });
+    return { start: range.start, end: range.end, label: range.label };
+  }
   if (period === "month-previous") {
     const currentMonth = todayDateInput().slice(0, 7);
     const [year, month] = currentMonth.split("-").map(Number);
@@ -202,7 +235,50 @@ export async function getBarberReport(filters: BarberReportFilters) {
     : await prisma.barber.findFirst({ where: { active: true, deletedAt: null }, include: { user: true }, orderBy: { user: { name: "asc" } } });
   if (!barber) throw new Error("Profissional nao encontrado.");
 
-  const [appointments, manualCommissions, manualAudits, sales, subscriptionRevenue, allSubscriberAppointments, services, products, barbers] = await Promise.all([
+  const [services, products, barbers] = await Promise.all([
+    prisma.service.findMany({ where: { active: true, deletedAt: null }, orderBy: { name: "asc" } }),
+    prisma.product.findMany({ where: { active: true, deletedAt: null }, orderBy: { name: "asc" } }),
+    prisma.barber.findMany({ where: { active: true, deletedAt: null }, include: { user: true }, orderBy: { user: { name: "asc" } } })
+  ]);
+
+  if (period.invalid) {
+    return {
+      filters,
+      period,
+      barber: { id: barber.id, name: barber.user.name },
+      options: {
+        barbers: barbers.map((item) => ({ id: item.id, name: item.user.name })),
+        services: services.map((item) => ({ id: item.id, name: item.name })),
+        products: products.map((item) => ({ id: item.id, name: item.name, visibleInStore: item.visibleInStore }))
+      },
+      sections: { site: [], manual: [], subscription: [], sales: [] },
+      summary: {
+        siteCount: 0,
+        manualCount: 0,
+        subscriptionCount: 0,
+        salesCount: 0,
+        grossProduced: 0,
+        siteGross: 0,
+        manualGross: 0,
+        salesGross: 0,
+        siteCommission: 0,
+        manualCommission: 0,
+        subscriptionRevenue: 0,
+        subscriptionPool: 0,
+        subscriptionTotalAppointments: 0,
+        subscriptionBarberAppointments: 0,
+        subscriptionCommission: 0,
+        salesCommission: 0,
+        salesWithCommissionGross: 0,
+        salesWithCommissionCost: 0,
+        salesWithoutCommissionGross: 0,
+        salesWithoutCommissionCost: 0,
+        totalCommission: 0
+      }
+    };
+  }
+
+  const [appointments, manualCommissions, manualAudits, sales, subscriptionRevenue, allSubscriberAppointments] = await Promise.all([
     prisma.appointment.findMany({
       where: {
         barberId: barber.id,
@@ -244,10 +320,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
       include: {
         client: { include: { subscriptions: { where: { active: true, status: "ACTIVE", deletedAt: null }, include: { subscriptionPlan: { include: { services: true } } } } } }
       }
-    }),
-    prisma.service.findMany({ where: { active: true, deletedAt: null }, orderBy: { name: "asc" } }),
-    prisma.product.findMany({ where: { active: true, deletedAt: null }, orderBy: { name: "asc" } }),
-    prisma.barber.findMany({ where: { active: true, deletedAt: null }, include: { user: true }, orderBy: { user: { name: "asc" } } })
+    })
   ]);
 
   const siteRows = appointments
@@ -446,6 +519,36 @@ export async function getBarberFinancialSummary({
     summary: report.summary,
     sections: report.sections
   };
+}
+
+export function getBarberDailySeries(report: Awaited<ReturnType<typeof getBarberReport>>) {
+  const startDate = dateInputFromDate(report.period.start);
+  const endDate = dateInputFromDate(report.period.end);
+  const days: string[] = [];
+
+  for (let current = startDate; current <= endDate; current = addDaysInput(current, 1)) {
+    days.push(current);
+  }
+
+  return days.map((date) => {
+    const siteRows = report.sections.site.filter((row) => dateInputFromDate(row.date) === date);
+    const manualRows = report.sections.manual.filter((row) => dateInputFromDate(row.date) === date);
+    const subscriptionRows = report.sections.subscription.filter((row) => dateInputFromDate(row.date) === date);
+    const day = startOfSaoPauloDay(date);
+    const revenue =
+      siteRows.reduce((sum, row) => sum + row.financialGross, 0) +
+      manualRows.reduce((sum, row) => sum + row.gross, 0);
+
+    return {
+      label: day.toLocaleDateString("pt-BR", { weekday: "short" }),
+      dateLabel: day.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      count: siteRows.length + manualRows.length + subscriptionRows.length,
+      siteCount: siteRows.length,
+      manualCount: manualRows.length,
+      subscriptionCount: subscriptionRows.length,
+      revenue
+    };
+  });
 }
 
 export function reportLines(report: Awaited<ReturnType<typeof getBarberReport>>) {

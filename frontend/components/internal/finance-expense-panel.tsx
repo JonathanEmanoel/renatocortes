@@ -67,6 +67,7 @@ type FinanceExpensePanelProps = {
     startDate: string;
     endDate: string;
     label: string;
+    error?: string;
   };
   periodRevenue: number;
   periodExpenses: number;
@@ -400,6 +401,9 @@ export function FinanceExpensePanel({
           </Link>
           <span className="text-sm font-bold text-white/55">{periodFilter.label}</span>
         </div>
+        {periodFilter.error ? (
+          <p className="mt-4 rounded-[10px] border border-red-500/40 bg-red-500/10 p-3 text-sm font-bold text-red-200">{periodFilter.error}</p>
+        ) : null}
       </form>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">

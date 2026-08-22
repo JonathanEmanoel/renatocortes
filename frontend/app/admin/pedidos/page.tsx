@@ -6,6 +6,7 @@ import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { SaleActionButtons } from "@/components/internal/sale-action-buttons";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 function addressLabel(address: unknown) {
@@ -107,7 +108,7 @@ function OrderSection({ title, empty, sales }: { title: string; empty: string; s
 export default async function AdminOrdersPage({ searchParams }: { searchParams?: Promise<{ status?: string; search?: string; from?: string; to?: string }> }) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/pedidos");
-  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect("/cliente");
+  if (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER") redirect(getDashboardPath(session.user.role, Boolean(session.user.barber?.id)));
   const filters = (await searchParams) ?? {};
 
   const sales = await prisma.sale.findMany({

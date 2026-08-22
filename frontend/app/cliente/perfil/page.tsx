@@ -1,10 +1,7 @@
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
-import { createClient } from "@/utils/supabase/server";
+import { requireAuthenticatedClient } from "@/lib/server/auth";
 import { ProfileContent } from "./profile-content";
 
 const notInformed = "Não informado";
@@ -25,48 +22,23 @@ function parseClientNotes(notes: string | null) {
 }
 
 export default async function ProfilePage() {
-  const cookieStore = await cookies();
-  const supabase = createClient(cookieStore);
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const session = await requireAuthenticatedClient("/cliente/perfil");
 
-  if (!user?.id) {
-    redirect("/login");
-  }
-
-  const profile = await prisma.user
-    .findFirst({
-      where: {
-        authId: user.id,
-        deletedAt: null
-      },
-      include: {
-        client: true,
-        addresses: {
-          where: { deletedAt: null },
-          orderBy: { createdAt: "desc" },
-          take: 1
-        }
-      }
-    })
-    .catch(() => null);
-
-  const address = profile?.addresses[0] ?? null;
+  const address = session.address;
   const formattedAddress = address
     ? `${address.street}, ${address.number}${address.complement ? ` - ${address.complement}` : ""}, ${address.city} - ${address.state}, ${address.zipCode}`
     : notInformed;
-  const notes = parseClientNotes(profile?.client?.notes ?? null);
+  const notes = parseClientNotes(session.client.notes ?? null);
 
   return (
     <ProfileContent
       initialProfile={{
-        name: profile?.name ?? notInformed,
-        email: profile?.email ?? user.email ?? notInformed,
-        phone: profile?.phone ?? notInformed,
+        name: session.user.name ?? notInformed,
+        email: session.user.email ?? notInformed,
+        phone: session.user.phone ?? notInformed,
         cpf: notes.cpf,
         birthDate: notes.birthDate,
-        createdAt: profile?.createdAt ? profile.createdAt.toLocaleDateString("pt-BR") : notInformed,
+        createdAt: session.user.createdAt ? session.user.createdAt.toLocaleDateString("pt-BR") : notInformed,
         address: formattedAddress,
         addressFields: {
           street: address?.street ?? "",
