@@ -1,16 +1,24 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/server/audit";
-import { SERVICE_COMMISSION_PERCENT } from "@/lib/server/finance-rules";
+import { createManualService, manualServiceTotals } from "@/lib/server/manual-services";
+import { startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+
+const itemSchema = z.object({
+  serviceId: z.string().uuid(),
+  quantity: z.coerce.number().int().min(1)
+});
 
 const requestSchema = z.object({
   barberId: z.string().uuid().optional(),
-  serviceIds: z.array(z.string().uuid()).min(1),
+  serviceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   customerName: z.string().trim().max(120).optional(),
-  paymentMethod: z.string().trim().max(40).optional(),
-  notes: z.string().trim().max(500).optional()
+  notes: z.string().trim().max(500).optional(),
+  subscriptionId: z.string().uuid().optional().nullable(),
+  clientId: z.string().uuid().optional().nullable(),
+  items: z.array(itemSchema).min(1),
+  highQuantityConfirmed: z.boolean().optional()
 });
 
 function canChooseBarber(role: string) {
@@ -39,7 +47,9 @@ export async function POST(request: Request) {
     }
 
     const payload = requestSchema.safeParse(await request.json());
-    if (!payload.success) return NextResponse.json({ message: "Confira os dados do atendimento." }, { status: 400 });
+    if (!payload.success) {
+      return NextResponse.json({ message: "Confira os dados do atendimento." }, { status: 400 });
+    }
 
     const barberId = resolveResponsibleBarberId({
       role: session.user.role,
@@ -48,50 +58,43 @@ export async function POST(request: Request) {
     });
     if (!barberId) return NextResponse.json({ message: "Informe o barbeiro responsavel." }, { status: 400 });
 
-    const [barber, services] = await Promise.all([
-      prisma.barber.findFirst({ where: { id: barberId, active: true, deletedAt: null } }),
-      prisma.service.findMany({ where: { id: { in: payload.data.serviceIds }, active: true, deletedAt: null } })
-    ]);
-
-    if (!barber || services.length !== payload.data.serviceIds.length) {
-      return NextResponse.json({ message: "Barbeiro ou servico indisponivel." }, { status: 404 });
+    const hasHighQuantity = !payload.data.subscriptionId && payload.data.items.some((item) => item.quantity > 50);
+    if (hasHighQuantity && !payload.data.highQuantityConfirmed) {
+      return NextResponse.json({ message: "Confirme a quantidade alta antes de registrar." }, { status: 400 });
     }
 
-    const total = services.reduce((sum, service) => sum + Number(service.price), 0);
-    const commissionPercent = SERVICE_COMMISSION_PERCENT;
-    const commissionAmount = total * (commissionPercent / 100);
-    const serviceNames = services.map((service) => service.name).join(" + ");
-
-    const transaction = await prisma.$transaction(async (tx) => {
-      const financial = await tx.financialTransaction.create({
-        data: {
-          type: "INCOME",
-          amount: total,
-          description: `Atendimento avulso: ${serviceNames}${payload.data.customerName ? ` - ${payload.data.customerName}` : ""}`
-        }
-      });
-
-      await tx.employeeCommission.create({
-        data: {
-          barberId,
-          amount: commissionAmount,
-          percentage: commissionPercent
-        }
-      });
-
-      return financial;
+    const manualService = await createManualService({
+      barberId,
+      serviceDate: startOfSaoPauloDay(payload.data.serviceDate ?? todayDateInput()),
+      customerName: payload.data.customerName,
+      clientId: payload.data.clientId ?? null,
+      subscriptionId: payload.data.subscriptionId ?? null,
+      notes: payload.data.notes,
+      items: payload.data.items,
+      createdById: session.user.id
     });
 
+    const totals = manualServiceTotals(manualService);
     await createAuditLog({
       userId: session.user.id,
       action: "MANUAL_SERVICE_CREATE",
-      entity: "FinancialTransaction",
-      entityId: transaction.id,
-      metadata: { barberId, serviceIds: payload.data.serviceIds, customerName: payload.data.customerName ?? null }
+      entity: "ManualService",
+      entityId: manualService.id,
+      metadata: {
+        barberId,
+        manualServiceId: manualService.id,
+        serviceIds: manualService.items.map((item) => item.serviceId),
+        customerName: manualService.customerName,
+        serviceDate: manualService.serviceDate.toISOString(),
+        gross: totals.chargedGross,
+        commission: totals.commission,
+        subscriptionId: manualService.subscriptionId
+      }
     });
 
-    return NextResponse.json({ transactionId: transaction.id });
-  } catch {
-    return NextResponse.json({ message: "Nao foi possivel registrar o atendimento agora." }, { status: 500 });
+    return NextResponse.json({ manualServiceId: manualService.id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Nao foi possivel registrar o atendimento agora.";
+    return NextResponse.json({ message }, { status: 500 });
   }
 }

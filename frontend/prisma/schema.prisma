@@ -26,6 +26,9 @@ model User {
   auditLogs     AuditLog[]
   expensesCreated Expense[]      @relation("ExpenseCreatedBy")
   expensesUpdated Expense[]      @relation("ExpenseUpdatedBy")
+  manualServicesCreated ManualService[] @relation("ManualServiceCreatedBy")
+  manualServiceChangeRequests ManualServiceChangeRequest[] @relation("ManualServiceChangeRequestedBy")
+  manualServiceChangeDecisions ManualServiceChangeRequest[] @relation("ManualServiceChangeDecidedBy")
 
   @@index([email])
   @@index([role])
@@ -40,6 +43,7 @@ model Client {
   updatedAt     DateTime       @updatedAt
   deletedAt     DateTime?
   appointments  Appointment[]
+  manualServices ManualService[]
   reviews       Review[]
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   payments      Payment[]
@@ -67,6 +71,7 @@ model Barber {
   commissions              EmployeeCommission[]
   reviews                  Review[]
   sales                    Sale[]
+  manualServices           ManualService[]
 
   @@index([userId])
   @@index([active])
@@ -86,6 +91,7 @@ model Service {
   appointments             Appointment[]
   appointmentServices      AppointmentService[]
   subscriptionPlanServices SubscriptionPlanService[]
+  manualServiceItems       ManualServiceItem[]
 
   @@index([active])
   @@map("services")
@@ -179,6 +185,7 @@ model Subscription {
   payments           Payment[]
   client             Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   subscriptionPlan   SubscriptionPlan @relation(fields: [subscriptionPlanId], references: [id])
+  manualServices     ManualService[]
 
   @@index([clientId])
   @@index([subscriptionPlanId])
@@ -406,6 +413,78 @@ model EmployeeCommission {
   @@map("employee_commissions")
 }
 
+model ManualService {
+  id             String                       @id @default(uuid())
+  barberId       String
+  clientId       String?
+  subscriptionId String?
+  createdById    String?
+  customerName   String?
+  serviceDate    DateTime
+  notes          String?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+  deletedAt      DateTime?
+  barber         Barber                       @relation(fields: [barberId], references: [id], onDelete: Cascade)
+  client         Client?                      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  subscription   Subscription?                @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  createdBy      User?                        @relation("ManualServiceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items          ManualServiceItem[]
+  changeRequests ManualServiceChangeRequest[]
+
+  @@index([barberId])
+  @@index([clientId])
+  @@index([subscriptionId])
+  @@index([createdById])
+  @@index([serviceDate])
+  @@index([deletedAt])
+  @@map("manual_services")
+}
+
+model ManualServiceItem {
+  id                    String        @id @default(uuid())
+  manualServiceId        String
+  serviceId              String
+  quantity               Int           @default(1)
+  unitPrice              Decimal       @db.Decimal(10, 2)
+  chargedUnitPrice       Decimal       @db.Decimal(10, 2)
+  duration               Int
+  coveredBySubscription  Boolean       @default(false)
+  subscriptionPlanName   String?
+  createdAt              DateTime      @default(now())
+  manualService          ManualService @relation(fields: [manualServiceId], references: [id], onDelete: Cascade)
+  service                Service       @relation(fields: [serviceId], references: [id])
+
+  @@index([manualServiceId])
+  @@index([serviceId])
+  @@index([coveredBySubscription])
+  @@map("manual_service_items")
+}
+
+model ManualServiceChangeRequest {
+  id                String                     @id @default(uuid())
+  manualServiceId   String
+  requestedById     String?
+  decidedById       String?
+  type              ManualServiceChangeType
+  status            ManualServiceChangeStatus  @default(PENDING)
+  previousSnapshot  Json
+  proposedSnapshot  Json?
+  reason            String?
+  createdAt         DateTime                   @default(now())
+  decidedAt         DateTime?
+  manualService     ManualService              @relation(fields: [manualServiceId], references: [id], onDelete: Cascade)
+  requestedBy       User?                      @relation("ManualServiceChangeRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  decidedBy         User?                      @relation("ManualServiceChangeDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([manualServiceId])
+  @@index([requestedById])
+  @@index([decidedById])
+  @@index([status])
+  @@index([type])
+  @@map("manual_service_change_requests")
+}
+
 model BarberAvailability {
   id        String    @id @default(uuid())
   barberId  String
@@ -579,6 +658,17 @@ enum FinancialTransactionType {
   EXPENSE
   COMMISSION
   REFUND
+}
+
+enum ManualServiceChangeType {
+  UPDATE
+  DELETE
+}
+
+enum ManualServiceChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum NotificationType {

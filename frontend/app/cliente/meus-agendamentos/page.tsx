@@ -24,21 +24,34 @@ export default async function MyAppointmentsPage() {
     redirect("/login");
   }
 
-  const records = await prisma.appointment.findMany({
-    where: {
-      clientId: session.client.id,
-      deletedAt: null
-    },
-    include: {
-      barber: { include: { user: true } },
-      service: true,
-      services: { include: { service: true } }
-    },
-    orderBy: [{ dataHora: "asc" }]
-  });
+  const [records, manualRecords] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        clientId: session.client.id,
+        deletedAt: null
+      },
+      include: {
+        barber: { include: { user: true } },
+        service: true,
+        services: { include: { service: true } }
+      },
+      orderBy: [{ dataHora: "asc" }]
+    }),
+    prisma.manualService.findMany({
+      where: {
+        clientId: session.client.id,
+        deletedAt: null
+      },
+      include: {
+        barber: { include: { user: true } },
+        items: { include: { service: true } }
+      },
+      orderBy: [{ serviceDate: "asc" }]
+    })
+  ]);
 
   const now = new Date();
-  const appointments = records
+  const siteAppointments = records
     .map((appointment) => ({
       id: appointment.id,
       date: formatDatePtBr(appointment.dataHora),
@@ -57,7 +70,23 @@ export default async function MyAppointmentsPage() {
       } min`,
       serviceId: appointment.serviceId,
       barberId: appointment.barberId
-    }))
+    }));
+
+  const manualAppointments = manualRecords.map((appointment) => ({
+    id: `manual-${appointment.id}`,
+    date: formatDatePtBr(appointment.serviceDate),
+    time: formatTimePtBr(appointment.serviceDate),
+    barber: appointment.barber.user.name,
+    service: appointment.items.map((item) => `${item.service.name}${item.coveredBySubscription ? " (plano)" : ""}`).join(" + "),
+    status: "Concluido" as Appointment["status"],
+    observations: appointment.notes ?? undefined,
+    isUpcoming: false,
+    duration: `${appointment.items.reduce((sum, item) => sum + item.duration * item.quantity, 0)} min`,
+    serviceId: appointment.items[0]?.serviceId ?? "",
+    barberId: appointment.barberId
+  }));
+
+  const appointments = [...siteAppointments, ...manualAppointments]
     .sort((a, b) => Number(b.isUpcoming) - Number(a.isUpcoming));
 
   return <AppointmentsContent appointments={appointments} />;

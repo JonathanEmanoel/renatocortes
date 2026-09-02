@@ -10,6 +10,7 @@ import {
   hasActiveSubscriptionAt,
   productItemsCommission
 } from "@/lib/server/finance-rules";
+import { manualServiceTotals, pendingManualServiceRequest } from "@/lib/server/manual-services";
 import { addDaysInput, dateInputFromDate, endOfSaoPauloDay, isValidDateOrder, resolvePeriodRange, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 
 export const reportTypeOptions = ["site", "manual", "subscription", "sales"] as const;
@@ -69,6 +70,7 @@ type ManualAuditMetadata = {
   barberId?: string;
   serviceIds?: string[];
   customerName?: string | null;
+  manualServiceId?: string;
 };
 
 function parseAuditMetadata(value: Prisma.JsonValue | null): ManualAuditMetadata {
@@ -77,7 +79,8 @@ function parseAuditMetadata(value: Prisma.JsonValue | null): ManualAuditMetadata
   return {
     barberId: typeof record.barberId === "string" ? record.barberId : undefined,
     serviceIds: Array.isArray(record.serviceIds) ? record.serviceIds.filter((item): item is string => typeof item === "string") : undefined,
-    customerName: typeof record.customerName === "string" ? record.customerName : null
+    customerName: typeof record.customerName === "string" ? record.customerName : null,
+    manualServiceId: typeof record.manualServiceId === "string" ? record.manualServiceId : undefined
   };
 }
 
@@ -198,6 +201,37 @@ function statusText(status: string) {
   return labels[status] ?? status;
 }
 
+function findLegacyManualAuditForCommission(
+  commission: { barberId: string; createdAt: Date },
+  audits: { createdAt: Date; metadata: Prisma.JsonValue | null }[]
+) {
+  return audits.find((audit) => {
+    const metadata = parseAuditMetadata(audit.metadata);
+    if (metadata.barberId !== commission.barberId || metadata.manualServiceId) return false;
+    const hidden = Boolean((metadata as Record<string, unknown>).maintenanceHiddenAt);
+    if (hidden) return false;
+    return Math.abs(audit.createdAt.getTime() - commission.createdAt.getTime()) <= 10 * 60 * 1000;
+  });
+}
+
+function legacyManualItems(metadata: ManualAuditMetadata): { serviceId: string; quantity: number }[] {
+  const maybeItems = (metadata as Record<string, unknown>).items;
+  const rawItems: unknown[] | null = Array.isArray(maybeItems) ? maybeItems : null;
+  if (rawItems) {
+    return rawItems
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+        const record = item as Record<string, unknown>;
+        return {
+          serviceId: typeof record.serviceId === "string" ? record.serviceId : "",
+          quantity: typeof record.quantity === "number" && Number.isInteger(record.quantity) && record.quantity > 0 ? record.quantity : 1
+        };
+      })
+      .filter((item): item is { serviceId: string; quantity: number } => Boolean(item?.serviceId));
+  }
+  return (metadata.serviceIds ?? []).map((serviceId) => ({ serviceId, quantity: 1 }));
+}
+
 type CoveredPlan = {
   subscriptionPlan: { name: string; services: { serviceId: string }[] };
 };
@@ -278,7 +312,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
     };
   }
 
-  const [appointments, manualCommissions, manualAudits, sales, subscriptionRevenue, allSubscriberAppointments] = await Promise.all([
+  const [appointments, manualCommissions, manualAudits, manualServices, sales, subscriptionRevenue, allSubscriberAppointments, allSubscriberManualServices] = await Promise.all([
     prisma.appointment.findMany({
       where: {
         barberId: barber.id,
@@ -309,6 +343,20 @@ export async function getBarberReport(filters: BarberReportFilters) {
       where: { action: "MANUAL_SERVICE_CREATE", createdAt: { gte: period.start, lte: period.end } },
       orderBy: { createdAt: "asc" }
     }),
+    prisma.manualService.findMany({
+      where: {
+        barberId: barber.id,
+        serviceDate: { gte: period.start, lte: period.end },
+        deletedAt: null
+      },
+      include: {
+        client: { include: { user: true } },
+        subscription: { include: { subscriptionPlan: { include: { services: true } } } },
+        items: { include: { service: true } },
+        changeRequests: true
+      },
+      orderBy: { serviceDate: "asc" }
+    }),
     prisma.sale.findMany({
       where: { barberId: barber.id, status: "COMPLETED", completedAt: { gte: period.start, lte: period.end }, deletedAt: null },
       include: { items: { include: { product: { include: { category: true } } } } },
@@ -320,6 +368,15 @@ export async function getBarberReport(filters: BarberReportFilters) {
       include: {
         client: { include: { subscriptions: { where: { active: true, status: "ACTIVE", deletedAt: null }, include: { subscriptionPlan: { include: { services: true } } } } } }
       }
+    }),
+    prisma.manualService.findMany({
+      where: {
+        serviceDate: { gte: period.start, lte: period.end },
+        deletedAt: null,
+        subscriptionId: { not: null },
+        items: { some: { coveredBySubscription: true } }
+      },
+      include: { items: true }
     })
   ]);
 
@@ -352,7 +409,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
     .filter((row) => row.gross > 0)
     .filter((row) => !filters.serviceId || row.serviceIds.includes(filters.serviceId))
 
-  const subscriptionRows = appointments
+  const appointmentSubscriptionRows = appointments
     .map((appointment) => {
       const isSubscriber = hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora);
       const split = splitAppointmentServices(appointment, isSubscriber);
@@ -373,14 +430,38 @@ export async function getBarberReport(filters: BarberReportFilters) {
     .filter((row) => appointments.some((appointment) => appointment.id === row.id && hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora)))
     .filter((row) => !filters.serviceId || row.serviceIds.includes(filters.serviceId));
 
-  const manualAuditByBarber = manualAudits
-    .map((audit) => ({ audit, metadata: parseAuditMetadata(audit.metadata) }))
-    .filter((item) => item.metadata.barberId === barber.id);
-  const manualRows = manualCommissions
-    .map((commission, index) => {
-      const audit = manualAuditByBarber[index];
-      const serviceIds = audit?.metadata.serviceIds ?? [];
-      const rowServices = services.filter((service) => serviceIds.includes(service.id));
+  const manualSubscriptionRows = manualServices
+    .filter((manualService) => manualService.subscriptionId && manualService.items.some((item) => item.coveredBySubscription))
+    .map((manualService) => ({
+      id: manualService.id,
+      code: shortId("ASS-MAN", manualService.id),
+      date: manualService.serviceDate,
+      dateText: dateText(manualService.serviceDate),
+      timeText: timeText(manualService.serviceDate),
+      client: manualService.client?.user.name ?? manualService.customerName ?? "Nao informado",
+      plan: manualService.subscription?.subscriptionPlan.name ?? "Assinatura",
+      services: manualService.items.map((item) => `${item.service.name}${item.quantity > 1 ? ` x${item.quantity}` : ""}${item.coveredBySubscription ? " (plano)" : " (extra)"}`).join(" + "),
+      serviceIds: manualService.items.map((item) => item.serviceId),
+      status: "COMPLETED",
+      statusText: "Concluido"
+    }))
+    .filter((row) => !filters.serviceId || row.serviceIds.includes(filters.serviceId));
+
+  const subscriptionRows = [...appointmentSubscriptionRows, ...manualSubscriptionRows];
+
+  const legacyManualRows = manualCommissions
+    .map((commission) => {
+      const audit = findLegacyManualAuditForCommission(commission, manualAudits);
+      if (!audit) return null;
+      const metadata = parseAuditMetadata(audit.metadata);
+      const items = legacyManualItems(metadata);
+      const serviceIds = items.map((item) => item.serviceId);
+      const rowServices = items
+        .map((item) => {
+          const service = services.find((service) => service.id === item.serviceId);
+          return service ? { service, quantity: item.quantity } : null;
+        })
+        .filter((item): item is { service: (typeof services)[number]; quantity: number } => Boolean(item));
       const gross = Number(commission.amount) / (SERVICE_COMMISSION_PERCENT / 100);
       return {
         id: commission.id,
@@ -388,16 +469,46 @@ export async function getBarberReport(filters: BarberReportFilters) {
         date: commission.createdAt,
         dateText: dateText(commission.createdAt),
         timeText: timeText(commission.createdAt),
-        client: audit?.metadata.customerName || "Nao informado",
-        services: rowServices.length > 0 ? rowServices.map((service) => service.name).join(" + ") : "Atendimento avulso",
+        client: metadata.customerName || "Nao informado",
+        services: rowServices.length > 0 ? rowServices.map((item) => `${item.service.name}${item.quantity > 1 ? ` x${item.quantity}` : ""}`).join(" + ") : "Atendimento avulso",
         serviceIds,
         gross,
         commission: Number(commission.amount),
         businessShare: gross - Number(commission.amount),
-        origin: "Atendimento avulso"
+        origin: "Atendimento avulso legado",
+        serviceUnits: Math.max(1, items.reduce((sum, item) => sum + item.quantity, 0)),
+        coveredUnits: 0,
+        pendingChange: null
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => Boolean(row))
+    .filter((row) => !filters.serviceId || row.serviceIds.includes(filters.serviceId));
+
+  const newManualRows = manualServices
+    .map((manualService) => {
+      const totals = manualServiceTotals(manualService);
+      const pendingRequest = pendingManualServiceRequest(manualService);
+      return {
+        id: manualService.id,
+        code: shortId("AVL", manualService.id),
+        date: manualService.serviceDate,
+        dateText: dateText(manualService.serviceDate),
+        timeText: timeText(manualService.serviceDate),
+        client: manualService.client?.user.name ?? manualService.customerName ?? "Nao informado",
+        services: manualService.items.map((item) => `${item.service.name}${item.quantity > 1 ? ` x${item.quantity}` : ""}${item.coveredBySubscription ? " (plano)" : ""}`).join(" + "),
+        serviceIds: manualService.items.map((item) => item.serviceId),
+        gross: totals.chargedGross,
+        commission: totals.commission,
+        businessShare: totals.chargedGross - totals.commission,
+        origin: manualService.subscriptionId ? "Atendimento manual de assinante" : "Atendimento avulso",
+        serviceUnits: totals.serviceUnits,
+        coveredUnits: totals.coveredUnits,
+        pendingChange: pendingRequest?.id ?? null
       };
     })
     .filter((row) => !filters.serviceId || row.serviceIds.includes(filters.serviceId));
+
+  const manualRows = [...newManualRows, ...legacyManualRows].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const saleRows = sales.flatMap((sale) =>
     sale.items.map((item) => {
@@ -438,10 +549,11 @@ export async function getBarberReport(filters: BarberReportFilters) {
   const completedSubscriberAppointments = allSubscriberAppointments.filter((appointment) =>
     hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora)
   );
+  const completedSubscriberVisitsCount = completedSubscriberAppointments.length + allSubscriberManualServices.length;
   const barberSubscriberCompleted = subscriptionRows.filter((row) => row.status === "COMPLETED").length;
   const subscriptionPool = subscriptionRevenue * (SUBSCRIPTION_BARBER_PERCENT / 100);
   const subscriptionCommission =
-    completedSubscriberAppointments.length > 0 ? subscriptionPool * (barberSubscriberCompleted / completedSubscriberAppointments.length) : 0;
+    completedSubscriberVisitsCount > 0 ? subscriptionPool * (barberSubscriberCompleted / completedSubscriberVisitsCount) : 0;
 
   const sections = {
     site: enabledTypes.includes("site") ? siteRows : [],
@@ -473,7 +585,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
     sections,
     summary: {
       siteCount: sections.site.length,
-      manualCount: sections.manual.length,
+      manualCount: sections.manual.reduce((sum, row) => sum + row.serviceUnits, 0),
       subscriptionCount: sections.subscription.length,
       salesCount: sections.sales.length,
       grossProduced: siteGross + manualGross + salesGross,
@@ -484,7 +596,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
       manualCommission,
       subscriptionRevenue,
       subscriptionPool,
-      subscriptionTotalAppointments: completedSubscriberAppointments.length,
+        subscriptionTotalAppointments: completedSubscriberVisitsCount,
       subscriptionBarberAppointments: barberSubscriberCompleted,
       subscriptionCommission: filteredSubscriptionCommission,
       salesCommission,
@@ -542,9 +654,9 @@ export function getBarberDailySeries(report: Awaited<ReturnType<typeof getBarber
     return {
       label: day.toLocaleDateString("pt-BR", { weekday: "short" }),
       dateLabel: day.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-      count: siteRows.length + manualRows.length + subscriptionRows.length,
+      count: siteRows.length + manualRows.reduce((sum, row) => sum + row.serviceUnits, 0) + subscriptionRows.length,
       siteCount: siteRows.length,
-      manualCount: manualRows.length,
+      manualCount: manualRows.reduce((sum, row) => sum + row.serviceUnits, 0),
       subscriptionCount: subscriptionRows.length,
       revenue
     };

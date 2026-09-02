@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SERVICE_COMMISSION_PERCENT, SUBSCRIPTION_BARBER_PERCENT, appointmentGross, productItemsCommission } from "@/lib/server/finance-rules";
+import { manualServiceTotals } from "@/lib/server/manual-services";
 
 export type MaintenanceCategory = "accounts" | "appointments" | "manual-services" | "in-person-sales" | "store-orders" | "subscriptions" | "expenses";
 export type MaintenanceMode = "hide" | "delete";
@@ -140,16 +141,21 @@ export async function getMaintenanceData(filters: MaintenanceFilters, developerU
 }
 
 async function getCounters() {
-  const [accounts, appointments, manualAudits, inPersonSales, storeOrders, subscriptions, expenses] = await Promise.all([
+  const [accounts, appointments, manualAudits, newManualServices, inPersonSales, storeOrders, subscriptions, expenses] = await Promise.all([
     prisma.user.count({ where: { role: "CLIENT", deletedAt: null } }),
     prisma.appointment.count({ where: { deletedAt: null } }),
     prisma.auditLog.findMany({ where: { action: "MANUAL_SERVICE_CREATE" }, select: { metadata: true } }),
+    prisma.manualService.count({ where: { deletedAt: null } }),
     prisma.sale.count({ where: { barberId: { not: null }, deletedAt: null } }),
     prisma.sale.count({ where: { barberId: null, deletedAt: null } }),
     prisma.subscription.count({ where: { deletedAt: null } }),
     prisma.expense.count({ where: { deletedAt: null } })
   ]);
-  const manualServices = manualAudits.filter((audit) => !isMaintenanceHidden(audit.metadata)).length;
+  const legacyManualServices = manualAudits.filter((audit) => {
+    const metadata = parseAuditMetadata(audit.metadata);
+    return !isMaintenanceHidden(audit.metadata) && typeof metadata.manualServiceId !== "string";
+  }).length;
+  const manualServices = newManualServices + legacyManualServices;
   return { accounts, appointments, "manual-services": manualServices, "in-person-sales": inPersonSales, "store-orders": storeOrders, subscriptions, expenses };
 }
 
@@ -231,7 +237,18 @@ async function appointmentRows(filters: MaintenanceFilters, range?: { gte?: Date
 }
 
 async function manualRows(filters: MaintenanceFilters, range?: { gte?: Date; lte?: Date }) {
-  const [audits, barbers, services] = await Promise.all([
+  const [manualServices, audits, barbers, services] = await Promise.all([
+    prisma.manualService.findMany({
+      where: {
+        deletedAt: filters.view === "hidden" ? { not: null } : null,
+        ...(range ? { serviceDate: range } : {}),
+        ...(filters.barberId ? { barberId: filters.barberId } : {}),
+        ...(filters.clientId ? { clientId: filters.clientId } : {})
+      },
+      include: { barber: { include: { user: true } }, client: { include: { user: true } }, items: { include: { service: true } } },
+      orderBy: { serviceDate: "desc" },
+      take: 150
+    }),
     prisma.auditLog.findMany({ where: { action: "MANUAL_SERVICE_CREATE", ...(range ? { createdAt: range } : {}) }, orderBy: { createdAt: "desc" }, take: 150 }),
     prisma.barber.findMany({ include: { user: true } }),
     prisma.service.findMany()
@@ -239,9 +256,34 @@ async function manualRows(filters: MaintenanceFilters, range?: { gte?: Date; lte
   const barberById = new Map(barbers.map((barber) => [barber.id, barber.user.name]));
   const serviceById = new Map(services.map((service) => [service.id, service]));
 
-  return audits
+  const currentRows = manualServices
+    .filter((manualService) => matchQuery([
+      manualService.id,
+      manualService.customerName,
+      manualService.client?.user.name,
+      manualService.barber.user.name,
+      manualService.items.map((item) => item.service.name).join(" + ")
+    ], filters.q))
+    .map((manualService) => {
+      const totals = manualServiceTotals(manualService);
+      return {
+        id: manualService.id,
+        title: manualService.customerName ?? manualService.client?.user.name ?? "Nao informado",
+        subtitle: `${manualService.items.map((item) => `${item.service.name}${item.quantity > 1 ? ` x${item.quantity}` : ""}${item.coveredBySubscription ? " (plano)" : ""}`).join(" + ")} com ${manualService.barber.user.name}`,
+        meta: [
+          `Data do atendimento: ${manualService.serviceDate.toLocaleString("pt-BR")}`,
+          `Tipo: ${manualService.subscriptionId ? "Assinante/manual" : "Avulso"}`,
+          `ID: ${manualService.id}`
+        ],
+        amount: totals.chargedGross,
+        commission: totals.commission
+      };
+    });
+
+  const legacyRows = audits
     .map((audit) => {
       const metadata = parseAuditMetadata(audit.metadata);
+      if (typeof metadata.manualServiceId === "string") return null;
       const hidden = isMaintenanceHidden(audit.metadata);
       if (filters.view === "hidden" ? !hidden : hidden) return null;
       const barberId = typeof metadata.barberId === "string" ? metadata.barberId : "";
@@ -264,6 +306,8 @@ async function manualRows(filters: MaintenanceFilters, range?: { gte?: Date; lte
       amount: row.amount,
       commission: row.amount * 0.5
     }));
+
+  return [...currentRows, ...legacyRows];
 }
 
 async function saleRows(filters: MaintenanceFilters, inPerson: boolean, range?: { gte?: Date; lte?: Date }) {
@@ -533,7 +577,19 @@ async function cleanAppointments(tx: Prisma.TransactionClient, ids: string[], mo
 }
 
 async function cleanManualServices(tx: Prisma.TransactionClient, auditIds: string[], mode: MaintenanceMode) {
-  const audits = await tx.auditLog.findMany({ where: { id: { in: auditIds }, action: "MANUAL_SERVICE_CREATE" }, select: { id: true, entityId: true, metadata: true, createdAt: true } });
+  const directManualIds = (await tx.manualService.findMany({ where: { id: { in: auditIds } }, select: { id: true } })).map((item) => item.id);
+  if (directManualIds.length > 0) {
+    if (mode === "hide") {
+      await tx.manualService.updateMany({ where: { id: { in: directManualIds } }, data: { deletedAt: new Date() } });
+    } else {
+      await tx.manualServiceChangeRequest.deleteMany({ where: { manualServiceId: { in: directManualIds } } });
+      await tx.manualService.deleteMany({ where: { id: { in: directManualIds } } });
+      await tx.auditLog.deleteMany({ where: { action: "MANUAL_SERVICE_CREATE", entity: "ManualService", entityId: { in: directManualIds } } });
+    }
+  }
+
+  const legacyAuditIds = auditIds.filter((id) => !directManualIds.includes(id));
+  const audits = await tx.auditLog.findMany({ where: { id: { in: legacyAuditIds }, action: "MANUAL_SERVICE_CREATE" }, select: { id: true, entityId: true, metadata: true, createdAt: true } });
   const financialIds = audits.map((audit) => audit.entityId).filter((id): id is string => Boolean(id));
   const services = await tx.service.findMany();
   const serviceById = new Map(services.map((service) => [service.id, service]));
@@ -671,7 +727,13 @@ async function restoreAppointments(tx: Prisma.TransactionClient, ids: string[]) 
 }
 
 async function restoreManualServices(tx: Prisma.TransactionClient, auditIds: string[]) {
-  const audits = await tx.auditLog.findMany({ where: { id: { in: auditIds }, action: "MANUAL_SERVICE_CREATE" }, select: { id: true, entityId: true, metadata: true, createdAt: true } });
+  const directManualIds = (await tx.manualService.findMany({ where: { id: { in: auditIds } }, select: { id: true } })).map((item) => item.id);
+  if (directManualIds.length > 0) {
+    await tx.manualService.updateMany({ where: { id: { in: directManualIds } }, data: { deletedAt: null } });
+  }
+
+  const legacyAuditIds = auditIds.filter((id) => !directManualIds.includes(id));
+  const audits = await tx.auditLog.findMany({ where: { id: { in: legacyAuditIds }, action: "MANUAL_SERVICE_CREATE" }, select: { id: true, entityId: true, metadata: true, createdAt: true } });
   const financialIds = audits.map((audit) => audit.entityId).filter((id): id is string => Boolean(id));
   await tx.financialTransaction.updateMany({ where: { id: { in: financialIds } }, data: { deletedAt: null } });
 

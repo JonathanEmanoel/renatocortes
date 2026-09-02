@@ -22,6 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { getBarberDailySeries, getBarberReport, reportTypeOptions } from "@/lib/server/barber-report";
 import { endOfSaoPauloDay, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+import { activeSubscribersForManualService } from "@/lib/server/manual-services";
 import { cn } from "@/utils/cn";
 
 type PageProps = {
@@ -123,7 +124,8 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
     todayAppointments,
     availabilityDays,
     serviceOptions,
-    productOptions
+    productOptions,
+    subscriberOptions
   ] = await Promise.all([
     prisma.appointment.findMany({
       where: { barberId, dataHora: { gte: todayStart, lte: todayEnd }, deletedAt: null },
@@ -142,7 +144,8 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
     prisma.product.findMany({
       where: { active: true, deletedAt: null },
       orderBy: { name: "asc" }
-    })
+    }),
+    activeSubscribersForManualService()
   ]);
 
   const completedSiteRows = report.sections.site.filter((row) => row.status === "COMPLETED" && row.financialGross > 0);
@@ -164,6 +167,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
 
   const shortcuts = [
     { href: "/funcionario/agendamentos", label: "Minha agenda", description: "Historico, filtros e acoes dos seus agendamentos.", icon: CalendarDays },
+    { href: "/funcionario/atendimentos", label: "Atendimentos avulsos", description: "Consultar, filtrar, editar e excluir seus registros manuais.", icon: Scissors },
     { href: "/funcionario/disponibilidade", label: "Disponibilidade", description: `${availabilityDays.length} dia(s) ativo(s) na sua agenda.`, icon: CalendarClock },
     { href: "/funcionario/produtos", label: "Produtos / estoque", description: "Cadastrar, ajustar imagens, precos e estoque.", icon: Package },
     { href: "/funcionario/despesas", label: "Registrar despesa", description: "Gasto pontual para aprovacao do administrador.", icon: ReceiptText }
@@ -428,7 +432,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
               <h2 className="mt-1 text-2xl font-black uppercase">Ferramentas do expediente</h2>
             </div>
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {shortcuts.map((shortcut) => (
               <Link
                 key={shortcut.href}
@@ -453,6 +457,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
             active: product.active,
             visibleInStore: product.visibleInStore
           }))}
+          subscribers={subscriberOptions}
           barbers={[{ id: barberId, name: session.user.name }]}
           barberId={barberId}
         />

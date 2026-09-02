@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Scissors, ShoppingCart } from "lucide-react";
 import { ManualProductSaleForm } from "@/components/internal/manual-product-sale-form";
-import { ManualServiceForm } from "@/components/internal/manual-service-form";
+import { ManualServiceForm, type SubscriberOption } from "@/components/internal/manual-service-form";
 import { cn } from "@/utils/cn";
 
 type ServiceOption = {
@@ -32,11 +32,13 @@ export function BarberPanelActionTabs({
   services,
   products,
   barbers,
+  subscribers = [],
   barberId
 }: {
   services: ServiceOption[];
   products: ProductOption[];
   barbers: BarberOption[];
+  subscribers?: SubscriberOption[];
   barberId: string;
 }) {
   const [activeTab, setActiveTab] = useState<ActiveTab>("service");
@@ -78,7 +80,7 @@ export function BarberPanelActionTabs({
 
       <div className="mt-5">
         {activeTab === "service" ? (
-          <ManualServiceForm services={services} barbers={barbers} defaultBarberId={barberId} />
+          <ManualServiceForm services={services} barbers={barbers} subscribers={subscribers} defaultBarberId={barberId} />
         ) : (
           <ManualProductSaleForm products={products} />
         )}

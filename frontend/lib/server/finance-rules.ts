@@ -60,7 +60,7 @@ export async function getSubscriptionRevenueForPeriod(startDate: Date, endDate: 
 }
 
 export async function getFinanceMetrics(startDate: Date, endDate: Date) {
-  const [incomeTransactions, completedAppointments, paidExpenses, completedSales, manualCommissions, subscriptionRevenue] = await Promise.all([
+  const [incomeTransactions, completedAppointments, paidExpenses, completedSales, manualCommissions, manualServices, subscriptionRevenue] = await Promise.all([
     prisma.financialTransaction.findMany({
       where: {
         type: "INCOME",
@@ -87,6 +87,10 @@ export async function getFinanceMetrics(startDate: Date, endDate: Date) {
       where: { createdAt: { gte: startDate, lte: endDate }, appointmentId: null, saleId: null },
       select: { amount: true }
     }),
+    prisma.manualService.findMany({
+      where: { serviceDate: { gte: startDate, lte: endDate }, deletedAt: null },
+      include: { items: true }
+    }),
     getSubscriptionRevenueForPeriod(startDate, endDate)
   ]);
 
@@ -101,9 +105,15 @@ export async function getFinanceMetrics(startDate: Date, endDate: Date) {
     if (!sale.barberId) return sum;
     return sum + productItemsCommission(sale.items);
   }, 0);
-  const manualServiceCommissions = manualCommissions.reduce((sum, commission) => sum + Number(commission.amount), 0);
+  const newManualServiceRevenue = manualServices.reduce(
+    (sum, manualService) =>
+      sum + manualService.items.reduce((itemSum, item) => itemSum + Number(item.chargedUnitPrice) * item.quantity, 0),
+    0
+  );
+  const newManualServiceCommissions = newManualServiceRevenue * (SERVICE_COMMISSION_PERCENT / 100);
+  const manualServiceCommissions = manualCommissions.reduce((sum, commission) => sum + Number(commission.amount), 0) + newManualServiceCommissions;
   const subscriptionBarberShare = subscriptionRevenue * (SUBSCRIPTION_BARBER_PERCENT / 100);
-  const grossRevenue = transactionRevenue + appointmentRevenue + subscriptionRevenue;
+  const grossRevenue = transactionRevenue + appointmentRevenue + newManualServiceRevenue + subscriptionRevenue;
   const totalCommissions = productCommissions + manualServiceCommissions + subscriptionBarberShare;
 
   return {
