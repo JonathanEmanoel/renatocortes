@@ -203,15 +203,25 @@ function statusText(status: string) {
 
 function findLegacyManualAuditForCommission(
   commission: { barberId: string; createdAt: Date },
-  audits: { createdAt: Date; metadata: Prisma.JsonValue | null }[]
+  audits: { id: string; createdAt: Date; metadata: Prisma.JsonValue | null }[],
+  usedAuditIds?: Set<string>
 ) {
-  return audits.find((audit) => {
-    const metadata = parseAuditMetadata(audit.metadata);
-    if (metadata.barberId !== commission.barberId || metadata.manualServiceId) return false;
-    const hidden = Boolean((metadata as Record<string, unknown>).maintenanceHiddenAt);
-    if (hidden) return false;
-    return Math.abs(audit.createdAt.getTime() - commission.createdAt.getTime()) <= 10 * 60 * 1000;
-  });
+  const candidates = audits
+    .filter((audit) => {
+      if (usedAuditIds?.has(audit.id)) return false;
+      const metadata = parseAuditMetadata(audit.metadata);
+      if (metadata.barberId !== commission.barberId || metadata.manualServiceId) return false;
+      const hidden = Boolean((metadata as Record<string, unknown>).maintenanceHiddenAt);
+      if (hidden) return false;
+      return Math.abs(audit.createdAt.getTime() - commission.createdAt.getTime()) <= 10 * 60 * 1000;
+    })
+    .sort((a, b) =>
+      Math.abs(a.createdAt.getTime() - commission.createdAt.getTime()) -
+      Math.abs(b.createdAt.getTime() - commission.createdAt.getTime())
+    );
+  const audit = candidates[0];
+  if (audit) usedAuditIds?.add(audit.id);
+  return audit;
 }
 
 function legacyManualItems(metadata: ManualAuditMetadata): { serviceId: string; quantity: number }[] {
@@ -449,9 +459,10 @@ export async function getBarberReport(filters: BarberReportFilters) {
 
   const subscriptionRows = [...appointmentSubscriptionRows, ...manualSubscriptionRows];
 
+  const usedLegacyAuditIds = new Set<string>();
   const legacyManualRows = manualCommissions
     .map((commission) => {
-      const audit = findLegacyManualAuditForCommission(commission, manualAudits);
+      const audit = findLegacyManualAuditForCommission(commission, manualAudits, usedLegacyAuditIds);
       if (!audit) return null;
       const metadata = parseAuditMetadata(audit.metadata);
       const items = legacyManualItems(metadata);
@@ -477,6 +488,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
         businessShare: gross - Number(commission.amount),
         origin: "Atendimento avulso legado",
         serviceUnits: Math.max(1, items.reduce((sum, item) => sum + item.quantity, 0)),
+        attendanceUnits: Math.max(1, items.reduce((sum, item) => sum + item.quantity, 0)),
         coveredUnits: 0,
         pendingChange: null
       };
@@ -488,6 +500,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
     .map((manualService) => {
       const totals = manualServiceTotals(manualService);
       const pendingRequest = pendingManualServiceRequest(manualService);
+      const attendanceUnits = manualService.subscriptionId && totals.coveredUnits > 0 ? 0 : totals.serviceUnits;
       return {
         id: manualService.id,
         code: shortId("AVL", manualService.id),
@@ -502,6 +515,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
         businessShare: totals.chargedGross - totals.commission,
         origin: manualService.subscriptionId ? "Atendimento manual de assinante" : "Atendimento avulso",
         serviceUnits: totals.serviceUnits,
+        attendanceUnits,
         coveredUnits: totals.coveredUnits,
         pendingChange: pendingRequest?.id ?? null
       };
@@ -585,7 +599,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
     sections,
     summary: {
       siteCount: sections.site.length,
-      manualCount: sections.manual.reduce((sum, row) => sum + row.serviceUnits, 0),
+      manualCount: sections.manual.reduce((sum, row) => sum + row.attendanceUnits, 0),
       subscriptionCount: sections.subscription.length,
       salesCount: sections.sales.length,
       grossProduced: siteGross + manualGross + salesGross,
@@ -654,9 +668,9 @@ export function getBarberDailySeries(report: Awaited<ReturnType<typeof getBarber
     return {
       label: day.toLocaleDateString("pt-BR", { weekday: "short" }),
       dateLabel: day.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-      count: siteRows.length + manualRows.reduce((sum, row) => sum + row.serviceUnits, 0) + subscriptionRows.length,
+      count: siteRows.length + manualRows.reduce((sum, row) => sum + row.attendanceUnits, 0) + subscriptionRows.length,
       siteCount: siteRows.length,
-      manualCount: manualRows.reduce((sum, row) => sum + row.serviceUnits, 0),
+      manualCount: manualRows.reduce((sum, row) => sum + row.attendanceUnits, 0),
       subscriptionCount: subscriptionRows.length,
       revenue
     };

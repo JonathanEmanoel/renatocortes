@@ -47,10 +47,15 @@ async function findLegacyManualAudit(tx: Prisma.TransactionClient, commission: {
     where: { action: "MANUAL_SERVICE_CREATE", createdAt: { gte: lower, lte: upper } },
     orderBy: { createdAt: "asc" }
   });
-  return audits.find((audit) => {
-    const metadata = parseAuditMetadata(audit.metadata);
-    return metadata.barberId === commission.barberId && typeof metadata.manualServiceId !== "string";
-  }) ?? null;
+  return audits
+    .filter((audit) => {
+      const metadata = parseAuditMetadata(audit.metadata);
+      return metadata.barberId === commission.barberId && typeof metadata.manualServiceId !== "string";
+    })
+    .sort((a, b) =>
+      Math.abs(a.createdAt.getTime() - commission.createdAt.getTime()) -
+      Math.abs(b.createdAt.getTime() - commission.createdAt.getTime())
+    )[0] ?? null;
 }
 
 async function updateLegacyManualService({

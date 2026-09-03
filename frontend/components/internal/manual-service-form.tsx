@@ -124,6 +124,7 @@ export function ManualServiceForm({
   }
 
   async function submit() {
+    if (isLoading) return;
     setFeedback(null);
     if (selectedServiceIds.length === 0) {
       setFeedback("Selecione pelo menos um servico.");
