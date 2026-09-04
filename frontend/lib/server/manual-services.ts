@@ -1,7 +1,7 @@
 import { Prisma, type ManualServiceChangeStatus, type ManualServiceChangeType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SERVICE_COMMISSION_PERCENT } from "@/lib/server/finance-rules";
-import { endOfSaoPauloDay, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
+import { endOfSaoPauloDay, isValidDateInput, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 
 export type ManualServiceInputItem = {
   serviceId: string;
@@ -60,6 +60,17 @@ export function assertPastOrToday(date: Date) {
   if (Number.isNaN(date.getTime()) || date > todayEnd) {
     throw new Error("Informe uma data de atendimento valida, sem datas futuras.");
   }
+}
+
+export function parseManualServiceDateInput(value?: string) {
+  const dateInput = value ?? todayDateInput();
+  if (!isValidDateInput(dateInput)) {
+    throw new Error("Informe uma data de atendimento valida.");
+  }
+  if (dateInput > todayDateInput()) {
+    throw new Error("A data do atendimento nao pode ser futura.");
+  }
+  return startOfSaoPauloDay(dateInput);
 }
 
 export function normalizeQuantity(quantity: number) {

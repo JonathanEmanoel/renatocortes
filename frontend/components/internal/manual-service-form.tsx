@@ -6,7 +6,7 @@ import { CalendarDays, Search, Scissors, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/format";
-import { todayDateInput } from "@/lib/server/date-periods";
+import { isValidDateInput, todayDateInput } from "@/lib/server/date-periods";
 import { cn } from "@/utils/cn";
 
 export type ServiceOption = {
@@ -60,6 +60,11 @@ function parseQuantity(value: string) {
   return Number.isInteger(quantity) && quantity >= 1 ? quantity : null;
 }
 
+function formatDateInput(value: string) {
+  if (!isValidDateInput(value)) return value;
+  return value.split("-").reverse().join("/");
+}
+
 export function ManualServiceForm({
   services,
   barbers,
@@ -84,8 +89,10 @@ export function ManualServiceForm({
   const [subscriberSearch, setSubscriberSearch] = useState("");
   const [subscriptionId, setSubscriptionId] = useState(initialValues?.subscriptionId ?? "");
   const [highQuantityConfirmed, setHighQuantityConfirmed] = useState(false);
+  const [showRetroactiveConfirm, setShowRetroactiveConfirm] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const todayInput = todayDateInput();
 
   const selectedSubscriber = subscribers.find((subscriber) => subscriber.id === subscriptionId) ?? null;
   const coveredIds = useMemo(() => new Set(selectedSubscriber?.coveredServiceIds ?? []), [selectedSubscriber]);
@@ -123,9 +130,17 @@ export function ManualServiceForm({
     }
   }
 
-  async function submit() {
+  async function submit(options: { confirmedRetroactive?: boolean } = {}) {
     if (isLoading) return;
     setFeedback(null);
+    if (!isValidDateInput(serviceDate)) {
+      setFeedback("Informe uma data de atendimento valida.");
+      return;
+    }
+    if (serviceDate > todayInput) {
+      setFeedback("A data do atendimento nao pode ser futura.");
+      return;
+    }
     if (selectedServiceIds.length === 0) {
       setFeedback("Selecione pelo menos um servico.");
       return;
@@ -141,6 +156,10 @@ export function ManualServiceForm({
     }
     if (totals.highQuantity && !highQuantityConfirmed) {
       setFeedback("Confirme a quantidade alta antes de continuar.");
+      return;
+    }
+    if (serviceDate !== todayInput && !options.confirmedRetroactive) {
+      setShowRetroactiveConfirm(true);
       return;
     }
 
@@ -171,7 +190,9 @@ export function ManualServiceForm({
         setCustomerName("");
         setNotes("");
         setHighQuantityConfirmed(false);
+        setServiceDate(todayDateInput());
       }
+      setShowRetroactiveConfirm(false);
       setFeedback(mode === "edit" ? "Atendimento salvo. Se foi alterado por barbeiro, aguardara aprovacao." : "Atendimento registrado com sucesso.");
       onSaved?.();
       router.refresh();
@@ -183,13 +204,13 @@ export function ManualServiceForm({
   }
 
   return (
-    <section className="rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
+    <section className="w-full min-w-0 rounded-[12px] border border-primary/20 bg-card p-6 shadow-panel">
+      <div className="flex min-w-0 flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
           <h2 className="text-xl font-black uppercase">{mode === "edit" ? "Editar atendimento avulso" : "Atendimento avulso"}</h2>
           <p className="mt-1 text-sm text-white/55">Servicos de assinante cobertos pelo plano entram como R$0,00 e contam para o rateio da assinatura.</p>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => setSubscriberMode(false)}
@@ -207,51 +228,65 @@ export function ManualServiceForm({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5">
-        <div className="grid gap-4 md:grid-cols-2">
+      <div className="mt-5 grid min-w-0 gap-5">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2">
           {canChooseBarber ? (
-            <label className="grid gap-2">
+            <label className="grid min-w-0 gap-2">
               <span className="font-bold uppercase text-white/70">Barbeiro</span>
               <select className="min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none" value={barberId} onChange={(event) => setBarberId(event.target.value)}>
                 {barbers.map((barber) => <option key={barber.id} value={barber.id}>{barber.name}</option>)}
               </select>
             </label>
           ) : null}
-          <label className="grid gap-2">
+          <label className="grid min-w-0 gap-2">
             <span className="font-bold uppercase text-white/70">Data do atendimento</span>
-            <span className="flex min-h-12 items-center gap-2 rounded-[10px] border border-primary/20 bg-black/45 px-4">
-              <CalendarDays className="h-4 w-4 text-primary" />
-              <input className="w-full bg-transparent font-semibold text-white outline-none" type="date" max={todayDateInput()} value={serviceDate} onChange={(event) => setServiceDate(event.target.value)} />
+            <span className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-[10px] border border-primary/20 bg-black/45 px-4">
+              <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
+              <input
+                className="min-w-0 flex-1 bg-transparent font-semibold text-white outline-none"
+                type="date"
+                max={todayInput}
+                value={serviceDate}
+                onChange={(event) => {
+                  setServiceDate(event.target.value);
+                  setShowRetroactiveConfirm(false);
+                }}
+              />
             </span>
           </label>
         </div>
 
         {subscriberMode ? (
-          <div className="grid gap-3 rounded-[12px] border border-primary/20 bg-black/25 p-4">
-            <label className="grid gap-2">
+          <div className="grid w-full min-w-0 gap-3 rounded-[12px] border border-primary/20 bg-black/25 p-4">
+            <label className="grid min-w-0 gap-2">
               <span className="font-bold uppercase text-white/70">Buscar assinante ativo</span>
-              <span className="flex min-h-12 items-center gap-2 rounded-[10px] border border-primary/20 bg-black/45 px-4">
-                <Search className="h-4 w-4 text-primary" />
-                <Input value={subscriberSearch} onChange={(event) => setSubscriberSearch(event.target.value)} placeholder="Nome ou telefone" className="border-0 bg-transparent p-0" />
+              <span className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-[10px] border border-primary/20 bg-black/45 px-4">
+                <Search className="h-4 w-4 shrink-0 text-primary" />
+                <input
+                  value={subscriberSearch}
+                  onChange={(event) => setSubscriberSearch(event.target.value)}
+                  placeholder="Nome ou telefone"
+                  className="min-w-0 flex-1 bg-transparent font-semibold text-white outline-none placeholder:text-white/45"
+                />
               </span>
             </label>
-            <div className="grid max-h-56 gap-2 overflow-y-auto pr-1">
+            <div className="grid max-h-56 min-w-0 gap-2 overflow-y-auto pr-1">
               {filteredSubscribers.map((subscriber) => (
-                <button key={subscriber.id} type="button" onClick={() => setSubscriptionId(subscriber.id)} className={cn("rounded-[10px] border p-3 text-left transition", subscriptionId === subscriber.id ? "border-primary bg-primary text-black" : "border-white/10 bg-black/30 text-white hover:border-primary/50")}>
-                  <p className="font-black uppercase">{subscriber.name}</p>
-                  <p className="text-xs opacity-70">{subscriber.plan} - {subscriber.phone}</p>
+                <button key={subscriber.id} type="button" onClick={() => setSubscriptionId(subscriber.id)} className={cn("w-full min-w-0 rounded-[10px] border p-3 text-left transition", subscriptionId === subscriber.id ? "border-primary bg-primary text-black" : "border-white/10 bg-black/30 text-white hover:border-primary/50")}>
+                  <p className="min-w-0 break-words font-black uppercase">{subscriber.name}</p>
+                  <p className="mt-1 min-w-0 break-words text-xs opacity-70">{subscriber.plan} - {subscriber.phone}</p>
                 </button>
               ))}
               {filteredSubscribers.length === 0 ? <p className="rounded-[10px] border border-white/10 bg-black/30 p-3 text-sm text-white/55">Nenhum assinante ativo encontrado.</p> : null}
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="grid gap-2">
+          <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            <label className="grid min-w-0 gap-2">
               <span className="font-bold uppercase text-white/70">Cliente</span>
               <Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Opcional" />
             </label>
-            <label className="grid gap-2">
+            <label className="grid min-w-0 gap-2">
               <span className="font-bold uppercase text-white/70">Observacoes</span>
               <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Opcional" />
             </label>
@@ -305,11 +340,29 @@ export function ManualServiceForm({
             <span>Total cobrado <strong className="ml-2 text-xl text-primary">{formatCurrency(totals.charged)}</strong></span>
             <span>Comissao estimada <strong className="ml-2 text-primary">{formatCurrency(totals.commission)}</strong></span>
           </div>
-          <Button type="button" onClick={submit} disabled={isLoading}>
+          <Button type="button" onClick={() => submit()} disabled={isLoading}>
             <UserCheck className="h-4 w-4" />
             {isLoading ? "Salvando..." : submitLabel ?? (mode === "edit" ? "Salvar atendimento" : "Registrar atendimento")}
           </Button>
         </div>
+        {showRetroactiveConfirm ? (
+          <div className="grid gap-4 rounded-[10px] border border-primary/50 bg-primary/10 p-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.14em] text-primary">Registrar atendimento retroativo?</p>
+              <p className="mt-2 text-sm text-white/75">
+                Voce esta registrando este atendimento como realizado em <strong className="text-white">{formatDateInput(serviceDate)}</strong>. Ele sera contabilizado nos relatorios e no financeiro dessa data.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={() => setShowRetroactiveConfirm(false)} disabled={isLoading}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={() => submit({ confirmedRetroactive: true })} disabled={isLoading}>
+                Confirmar registro
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {feedback ? <p className="rounded-[8px] border border-primary/50 p-3 text-sm text-primary">{feedback}</p> : null}
       </div>
     </section>

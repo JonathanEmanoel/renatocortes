@@ -7,11 +7,11 @@ import { SERVICE_COMMISSION_PERCENT } from "@/lib/server/finance-rules";
 import {
   assertManualServiceOwner,
   canAdminManualServices,
+  parseManualServiceDateInput,
   pendingManualServiceRequest,
   replaceManualServiceItems,
   snapshotManualService
 } from "@/lib/server/manual-services";
-import { startOfSaoPauloDay } from "@/lib/server/date-periods";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 type RouteContext = {
@@ -98,7 +98,7 @@ async function updateLegacyManualService({
     }
     const serviceById = new Map(services.map((service) => [service.id, service]));
     const gross = payload.items.reduce((sum, item) => sum + Number(serviceById.get(item.serviceId)?.price ?? 0) * item.quantity, 0);
-    const serviceDate = startOfSaoPauloDay(payload.serviceDate);
+    const serviceDate = parseManualServiceDateInput(payload.serviceDate);
     const metadata = parseAuditMetadata(audit.metadata);
     const items = payload.items.map((item) => ({ serviceId: item.serviceId, quantity: item.quantity }));
 
@@ -192,7 +192,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         id,
         {
           barberId: manualService.barberId,
-          serviceDate: startOfSaoPauloDay(payload.data.serviceDate),
+          serviceDate: parseManualServiceDateInput(payload.data.serviceDate),
           customerName: payload.data.customerName,
           clientId: payload.data.clientId ?? null,
           subscriptionId: payload.data.subscriptionId ?? null,

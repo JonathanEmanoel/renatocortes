@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAuditLog } from "@/lib/server/audit";
-import { createManualService, manualServiceTotals } from "@/lib/server/manual-services";
-import { startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
+import { createManualService, manualServiceTotals, parseManualServiceDateInput } from "@/lib/server/manual-services";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const itemSchema = z.object({
@@ -65,7 +64,7 @@ export async function POST(request: Request) {
 
     const manualService = await createManualService({
       barberId,
-      serviceDate: startOfSaoPauloDay(payload.data.serviceDate ?? todayDateInput()),
+      serviceDate: parseManualServiceDateInput(payload.data.serviceDate),
       customerName: payload.data.customerName,
       clientId: payload.data.clientId ?? null,
       subscriptionId: payload.data.subscriptionId ?? null,
