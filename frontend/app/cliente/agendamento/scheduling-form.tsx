@@ -21,15 +21,22 @@ type SchedulingFormProps = {
   services: Omit<Service, "icon">[];
   barbers: Barber[];
   dates: SchedulingDate[];
-  availableTimes: string[];
   availabilityByBarber: Record<string, { weekDay: number; startTime: string; endTime: string }[]>;
 };
 
 const steps = ["Servico", "Barbeiro", "Data", "Horario", "Resumo"];
+const slotIntervalMinutes = 60;
+const blockedStartTimes = new Set(["12:00"]);
 
 function minutesFromTime(value: string) {
   const [hours = "0", minutes = "0"] = value.split(":");
   return Number(hours) * 60 + Number(minutes);
+}
+
+function timeFromMinutes(value: number) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
 function weekDayFromDate(value: string) {
@@ -37,12 +44,12 @@ function weekDayFromDate(value: string) {
   return new Date(year, month - 1, day).getDay();
 }
 
-export function SchedulingForm({ services, barbers, dates, availableTimes, availabilityByBarber }: SchedulingFormProps) {
+export function SchedulingForm({ services, barbers, dates, availabilityByBarber }: SchedulingFormProps) {
   const [step, setStep] = useState(0);
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [barberId, setBarberId] = useState(barbers[0]?.id ?? "");
   const [date, setDate] = useState(dates[0]?.value ?? "");
-  const [time, setTime] = useState(availableTimes[0] ?? "");
+  const [time, setTime] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [whatsAppSuccessUrl, setWhatsAppSuccessUrl] = useState<string | null>(null);
   const [calendarSuccessUrl, setCalendarSuccessUrl] = useState<string | null>(null);
@@ -69,11 +76,13 @@ export function SchedulingForm({ services, barbers, dates, availableTimes, avail
     const totalDuration = Math.max(selected.totalDuration, 30);
     const start = minutesFromTime(dayAvailability.startTime);
     const end = minutesFromTime(dayAvailability.endTime);
-    return availableTimes.filter((item) => {
-      const timeStart = minutesFromTime(item);
-      return timeStart >= start && timeStart + totalDuration <= end;
-    });
-  }, [availableTimes, date, selected.totalDuration, selectedAvailability]);
+    const times: string[] = [];
+    for (let current = start; current + totalDuration <= end; current += slotIntervalMinutes) {
+      const slot = timeFromMinutes(current);
+      if (!blockedStartTimes.has(slot)) times.push(slot);
+    }
+    return times;
+  }, [date, selected.totalDuration, selectedAvailability]);
 
   useEffect(() => {
     if (!availableDates.has(weekDayFromDate(date))) {

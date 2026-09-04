@@ -242,6 +242,11 @@ function legacyManualItems(metadata: ManualAuditMetadata): { serviceId: string; 
   return (metadata.serviceIds ?? []).map((serviceId) => ({ serviceId, quantity: 1 }));
 }
 
+function manualAttendanceUnits(items: { quantity: number }[]) {
+  if (items.length === 0) return 1;
+  return Math.max(...items.map((item) => item.quantity));
+}
+
 type CoveredPlan = {
   subscriptionPlan: { name: string; services: { serviceId: string }[] };
 };
@@ -488,7 +493,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
         businessShare: gross - Number(commission.amount),
         origin: "Atendimento avulso legado",
         serviceUnits: Math.max(1, items.reduce((sum, item) => sum + item.quantity, 0)),
-        attendanceUnits: Math.max(1, items.reduce((sum, item) => sum + item.quantity, 0)),
+        attendanceUnits: manualAttendanceUnits(items),
         coveredUnits: 0,
         pendingChange: null
       };
@@ -500,7 +505,7 @@ export async function getBarberReport(filters: BarberReportFilters) {
     .map((manualService) => {
       const totals = manualServiceTotals(manualService);
       const pendingRequest = pendingManualServiceRequest(manualService);
-      const attendanceUnits = manualService.subscriptionId && totals.coveredUnits > 0 ? 0 : totals.serviceUnits;
+      const attendanceUnits = manualService.subscriptionId && totals.coveredUnits > 0 ? 0 : manualAttendanceUnits(manualService.items);
       return {
         id: manualService.id,
         code: shortId("AVL", manualService.id),

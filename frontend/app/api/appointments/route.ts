@@ -41,6 +41,22 @@ function createDateTime(date: string, time: string) {
   return new Date(`${date}T${time}:00-03:00`);
 }
 
+function weekDayFromDateInput(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day).getDay();
+}
+
+function minutesFromDateInSaoPaulo(date: Date) {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return minutesFromTime(`${byType.get("hour")}:${byType.get("minute")}`);
+}
+
 function normalizeServiceIds(input: { serviceId?: string; serviceIds?: string[] }) {
   return Array.from(new Set(input.serviceIds?.length ? input.serviceIds : input.serviceId ? [input.serviceId] : []));
 }
@@ -94,7 +110,7 @@ async function validateAvailability(input: {
   const services = input.serviceIds.map((id) => servicesById.get(id)!);
   const totalDuration = services.reduce((sum, item) => sum + item.duration, 0);
   const totalPrice = services.reduce((sum, item) => sum + Number(item.price), 0);
-  const weekDay = appointmentDate.getDay();
+  const weekDay = weekDayFromDateInput(input.date);
   const requestedStart = minutesFromTime(input.time);
   const requestedEnd = requestedStart + totalDuration;
   const availability = await prisma.barberAvailability.findFirst({
@@ -139,7 +155,7 @@ async function validateAvailability(input: {
   });
 
   const hasConflict = existingAppointments.some((appointment) => {
-    const existingStart = appointment.dataHora.getHours() * 60 + appointment.dataHora.getMinutes();
+    const existingStart = minutesFromDateInSaoPaulo(appointment.dataHora);
     const existingEnd = existingStart + sumServiceDuration(appointment);
     return requestedStart < existingEnd && requestedEnd > existingStart;
   });

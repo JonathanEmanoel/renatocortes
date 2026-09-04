@@ -89,7 +89,6 @@ export default async function SchedulingPage() {
     specialty: barber.specialty ?? "Barbeiro Renato Cortes"
   }));
 
-  const availableTimes = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
   const availabilityByBarber = Object.fromEntries(
     barberRecords.map((barber) => [
       barber.id,
@@ -101,5 +100,5 @@ export default async function SchedulingPage() {
     ])
   );
 
-  return <SchedulingForm services={services} barbers={barbers} dates={buildDates()} availableTimes={availableTimes} availabilityByBarber={availabilityByBarber} />;
+  return <SchedulingForm services={services} barbers={barbers} dates={buildDates()} availabilityByBarber={availabilityByBarber} />;
 }
