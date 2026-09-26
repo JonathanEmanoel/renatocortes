@@ -21,6 +21,16 @@ function servicesTotal(appointment: { service: { price: unknown }; services: { p
   return appointment.services.length ? appointment.services.reduce((sum, item) => sum + Number(item.price), 0) : Number(appointment.service.price);
 }
 
+const appointmentListSelect = {
+  id: true,
+  status: true,
+  dataHora: true,
+  client: { select: { user: { select: { name: true } } } },
+  barber: { select: { user: { select: { name: true } } } },
+  service: { select: { name: true, duration: true, price: true } },
+  services: { select: { duration: true, price: true, service: { select: { name: true } } } }
+} as const;
+
 type AdminAppointmentsPageProps = {
   searchParams?: Promise<{
     barberId?: string;
@@ -59,7 +69,7 @@ export default async function AdminAppointmentsPage({ searchParams }: AdminAppoi
         status: operationalStatusFilter ?? { in: [...operationalStatuses] },
         dataHora: dayStart && dayEnd ? { gte: dayStart, lte: dayEnd } : undefined
       },
-      include: { client: { include: { user: true } }, barber: { include: { user: true } }, service: true, services: { include: { service: true } } },
+      select: appointmentListSelect,
       orderBy: { dataHora: "asc" }
     }),
     prisma.appointment.findMany({
@@ -69,7 +79,7 @@ export default async function AdminAppointmentsPage({ searchParams }: AdminAppoi
         dataHora: dayStart && dayEnd ? { gte: dayStart, lte: dayEnd } : { gte: since },
         status: historyStatusFilter ?? { in: [...historyStatuses] }
       },
-      include: { client: { include: { user: true } }, barber: { include: { user: true } }, service: true, services: { include: { service: true } } },
+      select: appointmentListSelect,
       orderBy: { dataHora: "desc" }
     })
   ]);

@@ -22,6 +22,11 @@ function firstParam(value: string | string[] | undefined) {
 
 const inputClass = "min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none transition focus:border-primary";
 
+const completedAppointmentSelect = {
+  service: { select: { id: true, name: true } },
+  services: { select: { service: { select: { id: true, name: true } } } }
+} as const;
+
 export default async function AdminReportsPage({ searchParams }: PageProps) {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/relatorios");
@@ -43,7 +48,7 @@ export default async function AdminReportsPage({ searchParams }: PageProps) {
     ? []
     : await prisma.appointment.findMany({
         where: { dataHora: { gte: range.start, lte: range.end }, status: "COMPLETED", deletedAt: null },
-        include: { service: true, services: { include: { service: true } } }
+        select: completedAppointmentSelect
       });
   const productsRanking = range.invalid
     ? []

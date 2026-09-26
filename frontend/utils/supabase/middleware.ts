@@ -4,6 +4,11 @@ import { type NextRequest, NextResponse } from "next/server";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
+/**
+ * Atualiza cookies do Supabase e protege rotas privadas no middleware.
+ * A funcao valida apenas presenca de usuario autenticado; decisao fina por role
+ * acontece nas paginas/APIs para separar CLIENT, BARBER, ADMIN e DEVELOPER.
+ */
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   let supabaseResponse = NextResponse.next({

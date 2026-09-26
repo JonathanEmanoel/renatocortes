@@ -12,6 +12,11 @@ function csvEscape(value: string | number) {
   return `"${String(value).replace(/"/g, '""')}"`;
 }
 
+const completedAppointmentSelect = {
+  service: { select: { id: true, name: true } },
+  services: { select: { service: { select: { id: true, name: true } } } }
+} as const;
+
 export async function GET(request: Request) {
   const session = await getAuthenticatedUser();
   if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DEVELOPER")) {
@@ -37,7 +42,7 @@ export async function GET(request: Request) {
     prisma.expense.findMany({ where: { paidAt: { gte: range.start, lte: range.end }, status: "PAID", deletedAt: null }, include: { category: true }, orderBy: { paidAt: "asc" } }),
     prisma.appointment.findMany({
       where: { dataHora: { gte: range.start, lte: range.end }, status: "COMPLETED", deletedAt: null },
-      include: { service: true, services: { include: { service: true } } }
+      select: completedAppointmentSelect
     }),
     prisma.saleItem.groupBy({
       by: ["productId"],

@@ -33,11 +33,21 @@ const updateSchema = z.object({
   highQuantityConfirmed: z.boolean().optional()
 });
 
+/**
+ * Trata metadados antigos de audit log como objeto simples.
+ * A funcao nao valida formato de itens ou datas; os chamadores precisam lidar
+ * com ausencias porque registros legados foram gravados em versoes diferentes.
+ */
 function parseAuditMetadata(value: Prisma.JsonValue | null) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, Prisma.JsonValue>;
 }
 
+/**
+ * Registros antigos de avulso existiam como comissao/auditoria/transacao,
+ * antes do modelo ManualService. Esta busca aproxima o audit log correspondente
+ * para permitir edicao controlada sem misturar registros de outro barbeiro.
+ */
 async function findLegacyManualAudit(tx: Prisma.TransactionClient, commission: { barberId: string; createdAt: Date }) {
   const lower = new Date(commission.createdAt);
   lower.setMinutes(lower.getMinutes() - 10);
@@ -58,6 +68,11 @@ async function findLegacyManualAudit(tx: Prisma.TransactionClient, commission: {
     )[0] ?? null;
 }
 
+/**
+ * Atualiza um atendimento avulso legado que ainda nao possui linha ManualService.
+ * O ajuste reescreve a comissao, metadados de auditoria e transacao financeira
+ * vinculada, mantendo a permissao por barbeiro quando quem edita nao e admin/dev.
+ */
 async function updateLegacyManualService({
   legacyId,
   role,
@@ -138,6 +153,7 @@ async function updateLegacyManualService({
     return { auditId: audit.id, gross };
   });
 
+  // Toda alteracao de legado gera novo audit log para manter a trilha historica.
   await createAuditLog({
     userId,
     action: "MANUAL_SERVICE_LEGACY_UPDATE",
@@ -148,6 +164,12 @@ async function updateLegacyManualService({
   return NextResponse.json({ ok: true });
 }
 
+/**
+ * Altera atendimento manual novo ou legado.
+ * Para BARBER, a alteracao no modelo novo fica materializada mas pendente de
+ * aprovacao via ManualServiceChangeRequest; para legado a rota aplica direto por
+ * falta de snapshot estruturado completo no modelo antigo.
+ */
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const session = await getAuthenticatedUser();
@@ -186,6 +208,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     const previousSnapshot = snapshotManualService(manualService);
     const deletedAt = manualService.deletedAt ?? null;
 
+    /*
+     * Barbeiros podem propor alteracoes, mas elas ficam pendentes para aprovacao.
+     * Admin/dev aplicam diretamente porque ja possuem permissao de gestao.
+     */
     await prisma.$transaction(async (tx) => {
       await replaceManualServiceItems(
         tx,
@@ -241,6 +267,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
+/**
+ * Remove atendimento manual respeitando a politica do tipo de registro.
+ * Registros novos usam soft delete e, se vierem de BARBER, aguardam aprovacao;
+ * registros legados baixam comissao/transacao porque nao possuem ManualService.
+ */
 export async function DELETE(_request: Request, context: RouteContext) {
   try {
     const session = await getAuthenticatedUser();
@@ -251,6 +282,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const { id } = await context.params;
     if (id.startsWith("legacy-")) {
       const legacyId = id.replace("legacy-", "");
+      // Legado nao tem ManualService para soft delete; a baixa ocorre nos registros vinculados.
       await prisma.$transaction(async (tx) => {
         const commission = await tx.employeeCommission.findFirst({
           where: {

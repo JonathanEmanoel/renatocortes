@@ -7,6 +7,11 @@ const requestSchema = z.object({
   appointmentId: z.string().uuid()
 });
 
+/**
+ * Inicia OAuth para CLIENT autenticado com appointmentId em formato UUID.
+ * Aqui apenas monta a URL (501 sem configuracao); a posse do agendamento e checada no callback.
+ * Nao cria evento nem altera o agendamento nesta requisicao.
+ */
 export async function POST(request: Request) {
   const session = await getAuthenticatedClient();
 

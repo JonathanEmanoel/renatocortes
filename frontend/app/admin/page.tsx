@@ -15,6 +15,16 @@ function appointmentServicesLabel(appointment: { service: { name: string }; serv
   return appointment.services.length ? appointment.services.map((item) => item.service.name).join(" + ") : appointment.service.name;
 }
 
+const operationalAppointmentSelect = {
+  id: true,
+  status: true,
+  dataHora: true,
+  client: { select: { user: { select: { name: true } } } },
+  barber: { select: { user: { select: { name: true } } } },
+  service: { select: { name: true } },
+  services: { select: { service: { select: { name: true } } } }
+} as const;
+
 export default async function AdminPanelPage() {
   const session = await getAuthenticatedUser();
 
@@ -54,7 +64,7 @@ export default async function AdminPanelPage() {
     prisma.product.findMany({ where: { active: true, stock: { lte: 5 }, deletedAt: null }, orderBy: { stock: "asc" }, take: 8 }),
     prisma.appointment.findMany({
       where: { deletedAt: null, status: { in: ["PENDING", "CONFIRMED"] } },
-      include: { client: { include: { user: true } }, barber: { include: { user: true } }, service: true, services: { include: { service: true } } },
+      select: operationalAppointmentSelect,
       orderBy: { dataHora: "asc" },
       take: 8
     })

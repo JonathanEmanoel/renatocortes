@@ -30,10 +30,16 @@ export default async function MyAppointmentsPage() {
         clientId: session.client.id,
         deletedAt: null
       },
-      include: {
-        barber: { include: { user: true } },
-        service: true,
-        services: { include: { service: true } }
+      select: {
+        id: true,
+        serviceId: true,
+        barberId: true,
+        dataHora: true,
+        status: true,
+        observacoes: true,
+        barber: { select: { user: { select: { name: true } } } },
+        service: { select: { name: true, duration: true } },
+        services: { select: { duration: true, service: { select: { name: true } } } }
       },
       orderBy: [{ dataHora: "asc" }]
     }),

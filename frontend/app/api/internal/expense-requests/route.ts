@@ -12,6 +12,11 @@ const expenseRequestSchema = z.object({
   notes: z.string().trim().max(500).optional()
 });
 
+/**
+ * Permite que barbeiros registrem uma despesa para aprovacao administrativa.
+ * A despesa nasce PENDING e nao cria transacao financeira; Renato precisa pagar
+ * ou aprovar no painel financeiro para ela entrar no caixa.
+ */
 export async function POST(request: Request) {
   try {
     const session = await getAuthenticatedUser();

@@ -41,10 +41,14 @@ export default async function ClientDashboardPage() {
             deletedAt: null,
             status: { in: ["PENDING", "CONFIRMED"] }
           },
-          include: {
-            barber: { include: { user: true } },
-            service: true,
-            services: { include: { service: true } }
+          select: {
+            id: true,
+            dataHora: true,
+            status: true,
+            observacoes: true,
+            barber: { select: { user: { select: { name: true } } } },
+            service: { select: { name: true, duration: true } },
+            services: { select: { duration: true, service: { select: { name: true } } } }
           },
           orderBy: { dataHora: "asc" }
         })

@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { SERVICE_COMMISSION_PERCENT, SUBSCRIPTION_BARBER_PERCENT, appointmentGross, productItemsCommission } from "@/lib/server/finance-rules";
+import { SERVICE_COMMISSION_PERCENT, SUBSCRIPTION_BARBER_PERCENT, appointmentFinancials, productItemsCommission } from "@/lib/server/finance-rules";
+import { assertExpenseNotLinkedToPayout } from "@/lib/server/expense-protection";
 import { manualServiceTotals } from "@/lib/server/manual-services";
 
 export type MaintenanceCategory = "accounts" | "appointments" | "manual-services" | "in-person-sales" | "store-orders" | "subscriptions" | "expenses";
@@ -58,36 +59,68 @@ const structuralEmails = new Set([
   "reservabarbearia605@gmail.com"
 ]);
 
+/**
+ * Converte Decimals/strings do Prisma para numero apenas para preview humano.
+ * Os valores calculados aqui nao devem ser usados como fonte contabil definitiva.
+ */
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
 
+/**
+ * Formata impactos financeiros da pre-visualizacao em BRL.
+ */
 function money(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/**
+ * Constrói intervalo bruto de filtro para a central dev.
+ * Diferente dos relatorios financeiros, usa o Date local simples informado pela
+ * ferramenta de limpeza e nao aplica regra de competencia em Sao Paulo.
+ */
 function dateRange(filters: Pick<MaintenanceFilters, "startDate" | "endDate">) {
   const gte = filters.startDate ? new Date(`${filters.startDate}T00:00:00`) : undefined;
   const lte = filters.endDate ? new Date(`${filters.endDate}T23:59:59.999`) : undefined;
   return gte || lte ? { ...(gte && !Number.isNaN(gte.getTime()) ? { gte } : {}), ...(lte && !Number.isNaN(lte.getTime()) ? { lte } : {}) } : undefined;
 }
 
+/**
+ * Aplica busca textual em memoria depois das consultas limitadas.
+ * Isso permite procurar por campos combinados, mas nao substitui indices do
+ * banco para listagens maiores.
+ */
 function matchQuery(values: Array<string | null | undefined>, query?: string) {
   if (!query?.trim()) return true;
   const needle = query.trim().toLowerCase();
   return values.some((value) => value?.toLowerCase().includes(needle));
 }
 
+/**
+ * Exibe nomes de serviços de agendamentos novos e legados.
+ * Quando `AppointmentService` existe, ele representa a composição real; o campo
+ * `service` fica como fallback para registros antigos.
+ */
 function serviceNames(appointment: { service: { name: string }; services: { service: { name: string } }[] }) {
   return appointment.services.length ? appointment.services.map((item) => item.service.name).join(" + ") : appointment.service.name;
 }
 
+/**
+ * Encontra transacoes financeiras antigas que foram vinculadas por descrição.
+ * Alguns lançamentos nao possuem FK direta, entao a limpeza precisa preservar a
+ * compatibilidade com esses prefixos historicos.
+ */
 function financialDescriptionWhere(ids: string[], prefixes: string[]) {
   return {
     OR: ids.flatMap((id) => prefixes.map((prefix) => ({ description: { contains: `${prefix}${id}` } })))
   };
 }
 
+/**
+ * Protege contas estruturais contra limpeza acidental pela ferramenta dev.
+ * A checagem combina id logado, role interna, e-mails fixos e nomes conhecidos
+ * porque parte das contas passou por migrações manuais ao longo do projeto.
+ */
 function structuralReason(user: { id: string; email: string; name: string; role: string }, developerUserId: string) {
   if (user.id === developerUserId) return "Conta DEVELOPER autenticada";
   if (user.role !== "CLIENT") return "Conta interna do sistema";
@@ -97,16 +130,28 @@ function structuralReason(user: { id: string; email: string; name: string; role:
   return null;
 }
 
+/**
+ * Lê metadados flexiveis de audit log sem presumir schema fechado.
+ */
 function parseAuditMetadata(value: Prisma.JsonValue | null) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, Prisma.JsonValue>;
 }
 
+/**
+ * Detecta ocultacao de registros legados que nao possuem coluna `deletedAt`.
+ * Para esses casos, a central marca `maintenanceHiddenAt` dentro do audit log.
+ */
 function isMaintenanceHidden(value: Prisma.JsonValue | null) {
   const metadata = parseAuditMetadata(value);
   return typeof metadata.maintenanceHiddenAt === "string";
 }
 
+/**
+ * Monta a tela da central de manutencao para a conta DEVELOPER.
+ * Une filtros, linhas selecionaveis, contadores, opcoes de filtro e historico
+ * recente sem executar nenhuma limpeza.
+ */
 export async function getMaintenanceData(filters: MaintenanceFilters, developerUserId: string) {
   const [barbers, clients, counters, rows, history] = await Promise.all([
     prisma.barber.findMany({ where: { active: true, deletedAt: null }, include: { user: true }, orderBy: { user: { name: "asc" } } }),
@@ -140,6 +185,11 @@ export async function getMaintenanceData(filters: MaintenanceFilters, developerU
   };
 }
 
+/**
+ * Conta registros ativos por categoria para o resumo da central dev.
+ * Atendimentos avulsos misturam o modelo novo ManualService com audit logs
+ * legados ainda visiveis.
+ */
 async function getCounters() {
   const [accounts, appointments, manualAudits, newManualServices, inPersonSales, storeOrders, subscriptions, expenses] = await Promise.all([
     prisma.user.count({ where: { role: "CLIENT", deletedAt: null } }),
@@ -159,6 +209,11 @@ async function getCounters() {
   return { accounts, appointments, "manual-services": manualServices, "in-person-sales": inPersonSales, "store-orders": storeOrders, subscriptions, expenses };
 }
 
+/**
+ * Encaminha a categoria selecionada para a consulta especifica.
+ * Cada categoria calcula impacto financeiro de modo proprio porque receitas,
+ * comissoes e proteções usam tabelas diferentes.
+ */
 export async function getMaintenanceRows(filters: MaintenanceFilters, developerUserId: string): Promise<MaintenanceRow[]> {
   const range = dateRange(filters);
   if (filters.category === "accounts") return accountRows(filters, developerUserId, range);
@@ -170,6 +225,11 @@ export async function getMaintenanceRows(filters: MaintenanceFilters, developerU
   return expenseRows(filters, range);
 }
 
+/**
+ * Lista contas CLIENT elegiveis para limpeza ou restauracao.
+ * Contas internas/estruturais sao marcadas como protegidas para impedir exclusao
+ * de acessos administrativos e operacionais.
+ */
 async function accountRows(filters: MaintenanceFilters, developerUserId: string, range?: { gte?: Date; lte?: Date }) {
   const users = await prisma.user.findMany({
     where: { role: "CLIENT", deletedAt: filters.view === "hidden" ? { not: null } : null, ...(range ? { createdAt: range } : {}) },
@@ -202,6 +262,37 @@ async function accountRows(filters: MaintenanceFilters, developerUserId: string,
     });
 }
 
+/**
+ * Lista agendamentos com impacto financeiro apenas quando finalizados.
+ * Pendentes, confirmados e cancelados aparecem para manutenção, mas nao entram
+ * como receita valida no preview.
+ */
+const maintenanceAppointmentSelect = {
+  id: true,
+  barberId: true,
+  status: true,
+  dataHora: true,
+  service: { select: { id: true, name: true, price: true } },
+  services: { select: { serviceId: true, price: true, service: { select: { name: true } } } },
+  client: {
+    select: {
+      user: { select: { name: true } },
+      subscriptions: {
+        select: {
+          active: true,
+          status: true,
+          deletedAt: true,
+          startDate: true,
+          endDate: true,
+          subscriptionPlan: { select: { name: true, services: { select: { serviceId: true } } } }
+        }
+      }
+    }
+  },
+  barber: { select: { user: { select: { name: true } } } },
+  commissions: { select: { amount: true } }
+};
+
 async function appointmentRows(filters: MaintenanceFilters, range?: { gte?: Date; lte?: Date }) {
   const appointments = await prisma.appointment.findMany({
     where: {
@@ -211,7 +302,7 @@ async function appointmentRows(filters: MaintenanceFilters, range?: { gte?: Date
       ...(filters.clientId ? { clientId: filters.clientId } : {}),
       ...(filters.status ? { status: filters.status as never } : {})
     },
-    include: { service: true, services: { include: { service: true } }, client: { include: { user: true } }, barber: { include: { user: true } }, commissions: true },
+    select: maintenanceAppointmentSelect,
     orderBy: { dataHora: "desc" },
     take: 150
   });
@@ -219,7 +310,7 @@ async function appointmentRows(filters: MaintenanceFilters, range?: { gte?: Date
   return appointments
     .filter((appointment) => matchQuery([appointment.id, appointment.client.user.name, appointment.barber.user.name, serviceNames(appointment)], filters.q))
     .map((appointment) => {
-      const amount = appointment.status === "COMPLETED" ? appointmentGross(appointment) : 0;
+      const amount = appointment.status === "COMPLETED" ? appointmentFinancials(appointment).chargedGross : 0;
       return {
         id: appointment.id,
         title: appointment.client.user.name,
@@ -236,6 +327,12 @@ async function appointmentRows(filters: MaintenanceFilters, range?: { gte?: Date
     });
 }
 
+/**
+ * Lista atendimentos avulsos atuais e legados na mesma categoria.
+ * O modelo novo usa `ManualService.serviceDate`; o legado depende de audit log e
+ * metadata, entao valores e itens podem ser aproximados quando os dados antigos
+ * nao guardaram quantidade/preco completo.
+ */
 async function manualRows(filters: MaintenanceFilters, range?: { gte?: Date; lte?: Date }) {
   const [manualServices, audits, barbers, services] = await Promise.all([
     prisma.manualService.findMany({
@@ -310,6 +407,11 @@ async function manualRows(filters: MaintenanceFilters, range?: { gte?: Date; lte
   return [...currentRows, ...legacyRows];
 }
 
+/**
+ * Lista vendas presenciais ou pedidos da loja conforme a presenca de `barberId`.
+ * A comissao exibida usa a comissao gravada quando existe; se nao houver, aplica
+ * a regra atual de produtos para estimar o impacto.
+ */
 async function saleRows(filters: MaintenanceFilters, inPerson: boolean, range?: { gte?: Date; lte?: Date }) {
   const sales = await prisma.sale.findMany({
     where: {
@@ -347,10 +449,15 @@ async function saleRows(filters: MaintenanceFilters, inPerson: boolean, range?: 
     });
 }
 
+/**
+ * Lista despesas removiveis pela manutencao.
+ * Despesas com vencimento ficam protegidas porque podem representar recorrencia
+ * ou compromisso financeiro que nao deve sumir em uma limpeza comum de teste.
+ */
 async function expenseRows(filters: MaintenanceFilters, range?: { gte?: Date; lte?: Date }) {
   const expenses = await prisma.expense.findMany({
     where: { deletedAt: filters.view === "hidden" ? { not: null } : null, ...(range ? { createdAt: range } : {}), ...(filters.status ? { status: filters.status as never } : {}) },
-    include: { category: true, transactions: true, createdBy: true },
+    include: { category: true, transactions: true, createdBy: true, subscriptionPayout: true },
     orderBy: { createdAt: "desc" },
     take: 150
   });
@@ -369,11 +476,16 @@ async function expenseRows(filters: MaintenanceFilters, range?: { gte?: Date; lt
       ],
       amount: toNumber(expense.amount),
       commission: 0,
-      protected: Boolean(expense.dueDate),
-      protectedReason: expense.dueDate ? "Despesa com vencimento protegida contra limpeza comum" : undefined
+      protected: Boolean(expense.dueDate || expense.subscriptionPayout),
+      protectedReason: expense.subscriptionPayout ? "Despesa vinculada a repasse de assinatura" : expense.dueDate ? "Despesa com vencimento protegida contra limpeza comum" : undefined
     }));
 }
 
+/**
+ * Lista assinaturas e estima impacto pelo valor do plano atual.
+ * Esse preview nao reconstitui caixa recebido pagamento a pagamento; ele mostra
+ * a receita recorrente que o dashboard considera quando a assinatura esta ativa.
+ */
 async function subscriptionRows(filters: MaintenanceFilters, range?: { gte?: Date; lte?: Date }) {
   const subscriptions = await prisma.subscription.findMany({
     where: {
@@ -419,6 +531,11 @@ async function subscriptionRows(filters: MaintenanceFilters, range?: { gte?: Dat
     });
 }
 
+/**
+ * Calcula o impacto antes de ocultar/excluir/restaurar registros.
+ * A pre-visualizacao remove itens protegidos da execucao e devolve avisos para
+ * que a UI obrigue uma decisao consciente antes de tocar dados reais.
+ */
 export async function previewMaintenance(category: MaintenanceCategory, ids: string[], mode: MaintenanceMode, developerUserId: string, restoreStock: boolean, includeHidden = false): Promise<MaintenancePreview> {
   const uniqueIds = [...new Set(ids)].filter(Boolean);
   const rows = await getMaintenanceRows({ category, view: includeHidden ? "hidden" : "active" }, developerUserId);
@@ -449,12 +566,20 @@ export async function previewMaintenance(category: MaintenanceCategory, ids: str
   };
 }
 
+/**
+ * Conta itens de estoque que seriam devolvidos ao remover vendas concluidas.
+ */
 async function getStockRestoreCount(saleIds: string[]) {
   if (!saleIds.length) return 0;
   const items = await prisma.saleItem.findMany({ where: { saleId: { in: saleIds }, sale: { status: "COMPLETED" } }, select: { quantity: true } });
   return items.reduce((sum, item) => sum + item.quantity, 0);
 }
 
+/**
+ * Mede o volume de registros dependentes afetados pela limpeza.
+ * O numero e informativo para preview; a execucao ainda aplica delecoes ou soft
+ * deletes especificos por categoria.
+ */
 async function countRelatedRecords(category: MaintenanceCategory, ids: string[]) {
   if (!ids.length) return 0;
   if (category === "appointments") {
@@ -486,6 +611,12 @@ async function countRelatedRecords(category: MaintenanceCategory, ids: string[])
   return appointments + sales + subscriptions;
 }
 
+/**
+ * Executa ocultacao ou exclusao apos a pre-visualizacao obrigatoria.
+ * A transacao cobre o banco local; a exclusao no Supabase Auth, quando existe,
+ * acontece depois e falhas nesse passo sao absorvidas para nao reverter a limpeza
+ * local ja registrada.
+ */
 export async function executeMaintenance(input: {
   category: MaintenanceCategory;
   ids: string[];
@@ -496,6 +627,7 @@ export async function executeMaintenance(input: {
   deleteAuthUser?: (authId: string) => Promise<void>;
 }) {
   const preview = await previewMaintenance(input.category, input.ids, input.mode, input.developerUserId, input.restoreStock, input.includeHidden);
+  if (input.category === "expenses") await assertExpenseNotLinkedToPayout(prisma, input.ids);
   if (!preview.count) return preview;
 
   const authIds = input.category === "accounts" && input.mode === "delete"
@@ -534,6 +666,11 @@ export async function executeMaintenance(input: {
   return preview;
 }
 
+/**
+ * Restaura registros previamente ocultados pela central dev.
+ * Somente linhas visiveis na aba de ocultos e sem protecao sao restauradas, e a
+ * acao fica registrada no audit log de manutencao.
+ */
 export async function restoreMaintenance(input: {
   category: MaintenanceCategory;
   ids: string[];
@@ -564,6 +701,11 @@ export async function restoreMaintenance(input: {
   return { count: ids.length, rows: rows.filter((row) => ids.includes(row.id)) };
 }
 
+/**
+ * Oculta ou exclui agendamentos e seus reflexos financeiros.
+ * A comissao e removida em ambos os modos para que dados ocultos nao sigam
+ * inflando relatorios; pagamentos/reviews so somem na exclusao permanente.
+ */
 async function cleanAppointments(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode) {
   await tx.employeeCommission.deleteMany({ where: { appointmentId: { in: ids } } });
   await tx.financialTransaction.updateMany({ where: financialDescriptionWhere(ids, ["Atendimento finalizado: "]), data: { deletedAt: new Date() } });
@@ -576,6 +718,11 @@ async function cleanAppointments(tx: Prisma.TransactionClient, ids: string[], mo
   await tx.appointment.deleteMany({ where: { id: { in: ids } } });
 }
 
+/**
+ * Limpa atendimentos manuais no modelo novo e no formato legado por audit log.
+ * Para legados, a funcao procura a comissao aproximada por barbeiro, valor e
+ * horario porque o modelo antigo nao tinha FK direta para o lançamento avulso.
+ */
 async function cleanManualServices(tx: Prisma.TransactionClient, auditIds: string[], mode: MaintenanceMode) {
   const directManualIds = (await tx.manualService.findMany({ where: { id: { in: auditIds } }, select: { id: true } })).map((item) => item.id);
   if (directManualIds.length > 0) {
@@ -635,6 +782,11 @@ async function cleanManualServices(tx: Prisma.TransactionClient, auditIds: strin
   await tx.auditLog.deleteMany({ where: { id: { in: auditIds } } });
 }
 
+/**
+ * Remove vendas/pedidos e opcionalmente devolve estoque de vendas concluidas.
+ * A receita e marcada como ocultada em soft delete; itens e pagamentos so sao
+ * removidos quando o modo e exclusao permanente.
+ */
 async function cleanSales(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode, restoreStock: boolean) {
   const sales = await tx.sale.findMany({ where: { id: { in: ids } }, include: { items: true } });
   if (restoreStock) {
@@ -656,7 +808,13 @@ async function cleanSales(tx: Prisma.TransactionClient, ids: string[], mode: Mai
   await tx.sale.deleteMany({ where: { id: { in: ids } } });
 }
 
+/**
+ * Limpa despesas pontuais e suas transacoes.
+ * Despesas com vencimento sao preservadas pela condicao `dueDate: null` mesmo
+ * que algum id protegido chegue ate esta camada.
+ */
 async function cleanExpenses(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode, developerUserId: string) {
+  await assertExpenseNotLinkedToPayout(tx, ids);
   if (mode === "hide") {
     await tx.financialTransaction.updateMany({ where: { expenseId: { in: ids } }, data: { deletedAt: new Date() } });
     await tx.expense.updateMany({ where: { id: { in: ids }, dueDate: null }, data: { deletedAt: new Date(), updatedById: developerUserId } });
@@ -666,6 +824,11 @@ async function cleanExpenses(tx: Prisma.TransactionClient, ids: string[], mode: 
   await tx.expense.deleteMany({ where: { id: { in: ids }, dueDate: null } });
 }
 
+/**
+ * Oculta ou exclui assinaturas junto com pagamentos e entradas financeiras.
+ * O soft delete precisa tocar as tres tabelas para que o dashboard financeiro
+ * pare de considerar receita recorrente e movimentacoes vinculadas.
+ */
 async function cleanSubscriptions(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode) {
   const payments = await tx.payment.findMany({ where: { subscriptionId: { in: ids } }, select: { id: true } });
   const paymentIds = payments.map((payment) => payment.id);
@@ -682,6 +845,11 @@ async function cleanSubscriptions(tx: Prisma.TransactionClient, ids: string[], m
   await tx.subscription.deleteMany({ where: { id: { in: ids } } });
 }
 
+/**
+ * Limpa contas CLIENT e dados dependentes.
+ * A rotina reaproveita os limpadores de agendamento e venda para manter as
+ * mesmas regras de comissao, estoque e financeiro antes de ocultar o usuario.
+ */
 async function cleanAccounts(tx: Prisma.TransactionClient, ids: string[], mode: MaintenanceMode) {
   const users = await tx.user.findMany({ where: { id: { in: ids }, role: "CLIENT" }, include: { client: true } });
   const userIds = users.map((user) => user.id);
@@ -704,17 +872,21 @@ async function cleanAccounts(tx: Prisma.TransactionClient, ids: string[], mode: 
   }
 }
 
+/**
+ * Restaura agendamentos ocultos e recria comissao faltante de finalizados.
+ */
 async function restoreAppointments(tx: Prisma.TransactionClient, ids: string[]) {
   const appointments = await tx.appointment.findMany({
     where: { id: { in: ids } },
-    include: { service: true, services: true, commissions: true }
+    select: maintenanceAppointmentSelect
   });
   await tx.appointment.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null } });
   await tx.financialTransaction.updateMany({ where: financialDescriptionWhere(ids, ["Atendimento finalizado: "]), data: { deletedAt: null } });
 
   for (const appointment of appointments) {
     if (appointment.status !== "COMPLETED" || appointment.commissions.length > 0) continue;
-    const amount = appointmentGross(appointment) * (SERVICE_COMMISSION_PERCENT / 100);
+    const amount = appointmentFinancials(appointment).commission;
+    if (amount <= 0) continue;
     await tx.employeeCommission.create({
       data: {
         barberId: appointment.barberId,
@@ -726,6 +898,11 @@ async function restoreAppointments(tx: Prisma.TransactionClient, ids: string[]) 
   }
 }
 
+/**
+ * Restaura atendimentos manuais novos e legados.
+ * No legado, remove a marca `maintenanceHiddenAt` e recria a comissao caso nao
+ * encontre uma correspondente na janela de horario.
+ */
 async function restoreManualServices(tx: Prisma.TransactionClient, auditIds: string[]) {
   const directManualIds = (await tx.manualService.findMany({ where: { id: { in: auditIds } }, select: { id: true } })).map((item) => item.id);
   if (directManualIds.length > 0) {
@@ -766,6 +943,11 @@ async function restoreManualServices(tx: Prisma.TransactionClient, auditIds: str
   }
 }
 
+/**
+ * Restaura vendas e recria comissao de produto quando ela nao existir.
+ * A recomposicao usa a regra atual de visibilidade/lucro, portanto pode nao
+ * reproduzir exatamente uma regra antiga se o cadastro do produto mudou.
+ */
 async function restoreSales(tx: Prisma.TransactionClient, ids: string[]) {
   const sales = await tx.sale.findMany({ where: { id: { in: ids } }, include: { items: { include: { product: true } }, commissions: true } });
   await tx.sale.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null } });
@@ -786,11 +968,18 @@ async function restoreSales(tx: Prisma.TransactionClient, ids: string[]) {
   }
 }
 
+/**
+ * Restaura despesas ocultas e suas transacoes financeiras vinculadas.
+ */
 async function restoreExpenses(tx: Prisma.TransactionClient, ids: string[], developerUserId: string) {
+  await assertExpenseNotLinkedToPayout(tx, ids);
   await tx.expense.updateMany({ where: { id: { in: ids } }, data: { deletedAt: null, updatedById: developerUserId } });
   await tx.financialTransaction.updateMany({ where: { expenseId: { in: ids } }, data: { deletedAt: null } });
 }
 
+/**
+ * Restaura assinaturas ocultas com pagamentos e transacoes associadas.
+ */
 async function restoreSubscriptions(tx: Prisma.TransactionClient, ids: string[]) {
   const payments = await tx.payment.findMany({ where: { subscriptionId: { in: ids } }, select: { id: true } });
   const paymentIds = payments.map((payment) => payment.id);
@@ -799,6 +988,10 @@ async function restoreSubscriptions(tx: Prisma.TransactionClient, ids: string[])
   await tx.financialTransaction.updateMany({ where: { paymentId: { in: paymentIds } }, data: { deletedAt: null } });
 }
 
+/**
+ * Reativa contas CLIENT ocultas e seus vinculos principais.
+ * Nao recria dados excluidos permanentemente; apenas remove soft delete.
+ */
 async function restoreAccounts(tx: Prisma.TransactionClient, ids: string[]) {
   const users = await tx.user.findMany({ where: { id: { in: ids }, role: "CLIENT" }, include: { client: true } });
   const userIds = users.map((user) => user.id);

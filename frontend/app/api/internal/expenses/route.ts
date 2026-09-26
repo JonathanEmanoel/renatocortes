@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/server/audit";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+import { assertExpenseNotLinkedToPayout, LinkedPayoutExpenseError } from "@/lib/server/expense-protection";
 
 const expenseSchema = z.object({
   expenseId: z.string().uuid().optional(),
@@ -19,15 +21,25 @@ const expenseSchema = z.object({
 
 const deleteSchema = z.object({ expenseId: z.string().uuid() });
 
+/**
+ * Restringe CRUD financeiro direto a ADMIN/DEVELOPER.
+ * Barbeiros usam o fluxo de solicitacao de despesa para aprovacao posterior.
+ */
 async function requireManager() {
   const session = await getAuthenticatedUser();
   return session && (session.user.role === "ADMIN" || session.user.role === "DEVELOPER") ? session : null;
 }
 
+/** Converte campos opcionais de data do formulario para Date. */
 function toDate(value?: string) {
   return value ? new Date(value) : undefined;
 }
 
+/**
+ * Normaliza o payload da despesa antes de criar ou atualizar.
+ * Quando o status ja e PAID e a UI nao enviou `paidAt`, usa o instante atual
+ * para que a movimentacao financeira represente uma baixa realizada.
+ */
 function expenseData(payload: z.infer<typeof expenseSchema>, userId: string) {
   const paidAt = payload.status === "PAID" ? toDate(payload.paidAt) ?? new Date() : toDate(payload.paidAt);
 
@@ -45,13 +57,17 @@ function expenseData(payload: z.infer<typeof expenseSchema>, userId: string) {
   };
 }
 
-async function registerExpenseTransaction(expenseId: string, amount: number, description: string) {
-  const alreadyRegistered = await prisma.financialTransaction.findFirst({
+/**
+ * A despesa so entra como movimentacao financeira quando esta paga.
+ * Isso evita que uma conta pendente reduza o caixa realizado do periodo.
+ */
+async function registerExpenseTransaction(expenseId: string, amount: number, description: string, db: Prisma.TransactionClient = prisma) {
+  const alreadyRegistered = await db.financialTransaction.findFirst({
     where: { expenseId, type: "EXPENSE", deletedAt: null }
   });
 
   if (!alreadyRegistered) {
-    await prisma.financialTransaction.create({
+    await db.financialTransaction.create({
       data: {
         expenseId,
         type: "EXPENSE",
@@ -62,6 +78,9 @@ async function registerExpenseTransaction(expenseId: string, amount: number, des
   }
 }
 
+/**
+ * Cria despesa administrativa e, se estiver paga, registra a saida financeira.
+ */
 export async function POST(request: Request) {
   try {
     const session = await requireManager();
@@ -88,6 +107,10 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Atualiza despesa administrativa e cria a transacao de pagamento se necessario.
+ * A funcao nao remove transacao antiga quando a despesa volta para PENDING.
+ */
 export async function PATCH(request: Request) {
   try {
     const session = await requireManager();
@@ -98,22 +121,27 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: "Confira os dados da despesa." }, { status: 400 });
     }
 
-    const expense = await prisma.expense.update({
-      where: { id: payload.data.expenseId },
-      data: expenseData(payload.data, session.user.id)
+    const expenseId = payload.data.expenseId;
+    const expense = await prisma.$transaction(async (tx) => {
+      await assertExpenseNotLinkedToPayout(tx, [expenseId]);
+      const updated = await tx.expense.update({ where: { id: expenseId }, data: expenseData(payload.data, session.user.id) });
+      if (updated.status === "PAID") await registerExpenseTransaction(updated.id, Number(updated.amount), `Despesa paga: ${updated.name}`, tx);
+      return updated;
     });
-
-    if (expense.status === "PAID") {
-      await registerExpenseTransaction(expense.id, Number(expense.amount), `Despesa paga: ${expense.name}`);
-    }
 
     await createAuditLog({ userId: session.user.id, action: "UPDATE_EXPENSE", entity: "Expense", entityId: expense.id, metadata: payload.data });
     return NextResponse.json({ expense });
-  } catch {
+  } catch (error) {
+    if (error instanceof LinkedPayoutExpenseError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json({ message: "Não foi possível atualizar a despesa." }, { status: 500 });
   }
 }
 
+/**
+ * Oculta despesa por soft delete.
+ * A transacao financeira vinculada nao e removida aqui; a central dev possui
+ * rotina propria para ocultar ambos em conjunto.
+ */
 export async function DELETE(request: Request) {
   try {
     const session = await requireManager();
@@ -122,14 +150,18 @@ export async function DELETE(request: Request) {
     const payload = deleteSchema.safeParse(await request.json());
     if (!payload.success) return NextResponse.json({ message: "Informe a despesa." }, { status: 400 });
 
-    const expense = await prisma.expense.update({
-      where: { id: payload.data.expenseId },
-      data: { deletedAt: new Date(), updatedById: session.user.id }
+    const expense = await prisma.$transaction(async (tx) => {
+      await assertExpenseNotLinkedToPayout(tx, [payload.data.expenseId]);
+      return tx.expense.update({
+        where: { id: payload.data.expenseId },
+        data: { deletedAt: new Date(), updatedById: session.user.id }
+      });
     });
 
     await createAuditLog({ userId: session.user.id, action: "DELETE_EXPENSE", entity: "Expense", entityId: expense.id });
     return NextResponse.json({ expense });
-  } catch {
+  } catch (error) {
+    if (error instanceof LinkedPayoutExpenseError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json({ message: "Não foi possível excluir a despesa." }, { status: 500 });
   }
 }

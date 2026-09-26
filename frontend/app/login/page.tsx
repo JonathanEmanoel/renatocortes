@@ -55,8 +55,13 @@ export default function LoginPage() {
       if (data.user) {
         const response = await fetch("/api/auth/me").catch(() => null);
         if (!response?.ok) {
-          await supabase.auth.signOut();
-          setFormError("Sua sessao nao pode ser validada. Entre novamente para continuar.");
+          const payload = await response?.json().catch(() => null);
+          if (response?.status === 401 || response?.status === 403) {
+            await supabase.auth.signOut();
+            setFormError("Sua sessao nao pode ser validada. Entre novamente para continuar.");
+          } else {
+            setFormError(payload?.message ?? "Nao foi possivel consultar seu perfil agora. Tente novamente em instantes.");
+          }
           return;
         }
 

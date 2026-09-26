@@ -50,10 +50,12 @@ type ManualServiceFormProps = {
   onSaved?: () => void;
 };
 
+/** Preserva os multiplicadores da edicao como texto, inclusive para os inputs controlados. */
 function initialQuantities(items?: { serviceId: string; quantity: number }[]) {
   return Object.fromEntries((items ?? []).map((item) => [item.serviceId, String(item.quantity)]));
 }
 
+/** Rejeita vazio, fracao e sinal; null permite distinguir entrada invalida de quantidade um. */
 function parseQuantity(value: string) {
   if (!/^\d+$/.test(value)) return null;
   const quantity = Number(value);
@@ -65,6 +67,11 @@ function formatDateInput(value: string) {
   return value.split("-").reverse().join("/");
 }
 
+/**
+ * Monta o lancamento avulso ou vinculado a assinatura, tanto na criacao quanto na edicao.
+ * Cobertura e comissao sao previas locais; autorizacao, persistencia e efeitos financeiros
+ * dependem do endpoint. canChooseBarber controla apenas a exibicao do seletor.
+ */
 export function ManualServiceForm({
   services,
   barbers,
@@ -102,6 +109,7 @@ export function ManualServiceForm({
     return subscriber.name.toLowerCase().includes(search) || subscriber.phone.toLowerCase().includes(search);
   });
 
+  // No modo assinante cada servico tem quantidade um; a cobertura zera apenas sua cobranca.
   const selectedItems = useMemo(
     () =>
       selectedServiceIds.map((id) => {
@@ -113,23 +121,34 @@ export function ManualServiceForm({
     [selectedServiceIds, services, quantities, subscriberMode, coveredIds]
   );
 
+  /** Estima 50% somente sobre itens cobrados; nao calcula nem realiza repasse de assinatura. */
   const totals = useMemo(() => {
     const charged = selectedItems.reduce((sum, item) => sum + (item.service && !item.covered ? item.service.price * item.quantity : 0), 0);
     const list = selectedItems.reduce((sum, item) => sum + (item.service ? item.service.price * item.quantity : 0), 0);
     return { charged, list, commission: charged * 0.5, highQuantity: selectedItems.some((item) => item.quantity > 50) };
   }, [selectedItems]);
 
+  /** Mantem o multiplicador ao desmarcar para recupera-lo se o servico for selecionado novamente. */
   function toggleService(id: string) {
     setSelectedServiceIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
     setQuantities((current) => ({ ...current, [id]: current[id] ?? "1" }));
   }
 
+  /** Permite apagar o input durante a digitacao; a obrigatoriedade e verificada na submissao. */
   function updateQuantity(id: string, value: string) {
     if (value === "" || /^\d+$/.test(value)) {
       setQuantities((current) => ({ ...current, [id]: value }));
     }
   }
 
+  /**
+   * Valida a previa e pede confirmacao antes de enviar serviceDate anterior ao dia atual.
+   * serviceDate representa a realizacao, nao a criacao ou o pagamento; o dia atual vem
+   * de todayDateInput. A confirmacao retroativa e local e nao integra o payload.
+   * Envia itens e vinculo do assinante, sem enviar a comissao estimada. Somente a
+   * criacao limpa os campos; a edicao preserva valores e notifica o componente pai.
+   * isLoading evita reenvio na interface, mas nao estabelece idempotencia no servidor.
+   */
   async function submit(options: { confirmedRetroactive?: boolean } = {}) {
     if (isLoading) return;
     setFeedback(null);

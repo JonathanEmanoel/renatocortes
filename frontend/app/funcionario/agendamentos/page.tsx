@@ -98,6 +98,20 @@ function servicesTotal(appointment: { service: { price: unknown }; services: { p
   return appointment.services.length ? appointment.services.reduce((sum, item) => sum + Number(item.price), 0) : Number(appointment.service.price);
 }
 
+const appointmentListSelect = {
+  id: true,
+  status: true,
+  dataHora: true,
+  client: {
+    select: {
+      user: { select: { name: true, phone: true, email: true } },
+      subscriptions: { where: { active: true, deletedAt: null }, select: { id: true } }
+    }
+  },
+  service: { select: { name: true, duration: true, price: true } },
+  services: { select: { duration: true, price: true, service: { select: { name: true } } } }
+} as const;
+
 const inputClass = "min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 font-semibold text-white outline-none transition focus:border-primary";
 
 export default async function BarberAppointmentsPage({ searchParams }: PageProps) {
@@ -136,12 +150,6 @@ export default async function BarberAppointmentsPage({ searchParams }: PageProps
       : []
     : [...historyStatuses];
 
-  const include = {
-    client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } },
-    service: true,
-    services: { include: { service: true } }
-  };
-
   const [operational, history] = await Promise.all([
     operationalStatusFilter.length === 0
       ? Promise.resolve([])
@@ -153,7 +161,7 @@ export default async function BarberAppointmentsPage({ searchParams }: PageProps
             status: { in: operationalStatusFilter },
             ...searchWhere
           },
-          include,
+          select: appointmentListSelect,
           orderBy: { dataHora: "asc" }
         }),
     historyStatusFilter.length === 0
@@ -166,7 +174,7 @@ export default async function BarberAppointmentsPage({ searchParams }: PageProps
             status: { in: historyStatusFilter },
             ...searchWhere
           },
-          include,
+          select: appointmentListSelect,
           orderBy: { dataHora: "desc" }
         })
   ]);

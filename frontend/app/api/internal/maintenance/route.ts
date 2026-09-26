@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { executeMaintenance, previewMaintenance, restoreMaintenance } from "@/lib/server/maintenance";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
+import { LinkedPayoutExpenseError } from "@/lib/server/expense-protection";
 
 const requestSchema = z.object({
   category: z.enum(["accounts", "appointments", "manual-services", "in-person-sales", "store-orders", "subscriptions", "expenses"]),
@@ -16,6 +17,11 @@ const requestSchema = z.object({
   confirmation: z.string().optional()
 });
 
+/**
+ * Cria cliente Supabase com service role apenas para exclusao de Auth.
+ * Se a chave nao estiver configurada, a limpeza local continua sem tentar apagar
+ * o usuario externo.
+ */
 function getSupabaseAdminClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,11 +34,19 @@ function getSupabaseAdminClient() {
   });
 }
 
+/**
+ * Limita a central de manutencao a conta DEVELOPER autenticada.
+ */
 async function requireDeveloper() {
   const session = await getAuthenticatedUser();
   return session?.user.role === "DEVELOPER" ? session : null;
 }
 
+/**
+ * Gera pre-visualizacao da manutencao sem alterar dados.
+ * A resposta inclui impactos e avisos, mas a execucao ainda precisa passar por
+ * confirmacao explicita em DELETE.
+ */
 export async function POST(request: Request) {
   try {
     const session = await requireDeveloper();
@@ -55,6 +69,11 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Executa ocultacao ou exclusao apos confirmacao textual.
+ * Recalcula o preview no servidor por meio de `executeMaintenance`, entao nao
+ * confia apenas no resumo que estava na tela.
+ */
 export async function DELETE(request: Request) {
   try {
     const session = await requireDeveloper();
@@ -86,7 +105,8 @@ export async function DELETE(request: Request) {
       message: payload.data.mode === "hide" ? "Registros ocultados com sucesso." : "Registros excluidos com sucesso.",
       result
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof LinkedPayoutExpenseError) return NextResponse.json({ message: error.message }, { status: 409 });
     return NextResponse.json(
       { message: "Nao foi possivel concluir a limpeza. Nenhuma alteracao parcial foi confirmada quando aplicavel." },
       { status: 500 }
@@ -94,6 +114,11 @@ export async function DELETE(request: Request) {
   }
 }
 
+/**
+ * Restaura registros ocultos na categoria informada.
+ * Nao usa a senha textual EXCLUIR porque o fluxo e reversivel dentro do soft
+ * delete/metadata disponivel.
+ */
 export async function PATCH(request: Request) {
   try {
     const session = await requireDeveloper();

@@ -14,12 +14,22 @@ const requestSchema = z.object({
   reason: z.string().trim().max(500).optional()
 });
 
+/**
+ * Confere o minimo estrutural de um snapshot salvo em JSON.
+ * A validacao e propositalmente simples porque a restauracao completa ainda
+ * depende de `restoreManualServiceFromSnapshot` gravar campos esperados.
+ */
 function isSnapshot(value: unknown): value is ManualServiceSnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return typeof record.barberId === "string" && typeof record.serviceDate === "string" && Array.isArray(record.items);
 }
 
+/**
+ * Aprova ou recusa solicitacoes de alteracao/exclusao de atendimento manual.
+ * Aprovar mantem a mudanca ja aplicada; recusar restaura o snapshot anterior
+ * para retirar impacto financeiro indevido de uma edicao nao aceita.
+ */
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const session = await getAuthenticatedUser();

@@ -9,6 +9,11 @@ const registerProfileSchema = z.object({
   phone: z.string().trim().min(10).max(20)
 });
 
+/**
+ * Completa cadastro local usando identidade/e-mail validados no Supabase, nao no corpo.
+ * Valida nome/telefone e faz upsert de User e Client juntos; nao cria credencial no Auth.
+ * O update tambem forca CLIENT e reativa o usuario existente, sem checar sua role anterior.
+ */
 export async function POST(request: Request) {
   try {
     const body = registerProfileSchema.parse(await request.json());
@@ -23,6 +28,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Sessão expirada. Faça login para concluir seu cadastro." }, { status: 401 });
     }
 
+    // Usuario e vinculo Client confirmam ou revertem juntos; a sessao Supabase ja existe fora do banco.
     const profile = await prisma.$transaction(async (tx) => {
       const dbUser = await tx.user.upsert({
         where: { authId: user.id },

@@ -14,6 +14,11 @@ const manageSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("change"), subscriptionId: z.string().uuid(), planId: z.string().uuid() })
 ]);
 
+/**
+ * Cria uma solicitacao de assinatura para o cliente logado.
+ * A assinatura nasce PENDING e inactive; ela abre contato pelo WhatsApp, mas nao
+ * deve gerar receita recorrente nem acesso ate a aprovacao administrativa.
+ */
 export async function POST(request: Request) {
   try {
     const session = await getAuthenticatedClient();
@@ -94,6 +99,11 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Permite ao cliente cancelar ou trocar plano de uma assinatura propria em andamento.
+ * Cancelamento encerra vigencia imediatamente; troca de plano nao cria pagamento
+ * nem confirma receita, apenas altera a referencia do plano.
+ */
 export async function PATCH(request: Request) {
   try {
     const session = await getAuthenticatedClient();

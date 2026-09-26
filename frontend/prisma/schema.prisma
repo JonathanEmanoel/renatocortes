@@ -8,6 +8,8 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// Identidade local vinculada ao Supabase Auth.
+/// `role` dirige roteamento e permissao; `deletedAt` oculta a conta sem apagar o usuario externo.
 model User {
   id            String         @id @default(uuid())
   authId        String         @unique @map("auth_id")
@@ -29,12 +31,15 @@ model User {
   manualServicesCreated ManualService[] @relation("ManualServiceCreatedBy")
   manualServiceChangeRequests ManualServiceChangeRequest[] @relation("ManualServiceChangeRequestedBy")
   manualServiceChangeDecisions ManualServiceChangeRequest[] @relation("ManualServiceChangeDecidedBy")
+  subscriptionPayoutsPaid SubscriptionPayout[] @relation("SubscriptionPayoutPaidBy")
 
   @@index([email])
   @@index([role])
   @@map("users")
 }
 
+/// Perfil de cliente usado por agendamentos, loja e assinaturas.
+/// Dados pessoais ficam em User; aqui ficam vinculos operacionais e notas internas.
 model Client {
   id            String         @id @default(uuid())
   userId        String         @unique
@@ -54,6 +59,8 @@ model Client {
   @@map("clients")
 }
 
+/// Profissional que atende agenda, vendas presenciais e repasses.
+/// Percentuais existem no cadastro, mas as regras atuais usam constantes centrais para evitar divergencia.
 model Barber {
   id                       String               @id @default(uuid())
   userId                   String               @unique
@@ -72,12 +79,15 @@ model Barber {
   reviews                  Review[]
   sales                    Sale[]
   manualServices           ManualService[]
+  subscriptionPayouts       SubscriptionPayout[]
 
   @@index([userId])
   @@index([active])
   @@map("barbers")
 }
 
+/// Servico vendido como agendamento, avulso ou cobertura de plano.
+/// Preco/duracao podem ser copiados para tabelas de itens para preservar historico.
 model Service {
   id                       String                    @id @default(uuid())
   name                     String                    @unique
@@ -97,6 +107,8 @@ model Service {
   @@map("services")
 }
 
+/// Agendamento feito pelo cliente no site para um barbeiro e horario especifico.
+/// So deve virar receita/comissao depois de finalizado conforme as regras do servidor.
 model Appointment {
   id          String               @id @default(uuid())
   clientId    String
@@ -105,6 +117,7 @@ model Appointment {
   dataHora    DateTime
   status      AppointmentStatus    @default(PENDING)
   observacoes String?
+  financialSnapshot Json?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
   deletedAt   DateTime?
@@ -124,6 +137,8 @@ model Appointment {
   @@map("appointments")
 }
 
+/// Snapshot dos serviços escolhidos dentro de uma unica visita agendada.
+/// Permite Corte + Barba como um agendamento sem perder preco e duracao do momento.
 model AppointmentService {
   id            String      @id @default(uuid())
   appointmentId String
@@ -140,6 +155,8 @@ model AppointmentService {
   @@map("appointment_services")
 }
 
+/// Plano comercial de assinatura.
+/// `value` e a base recorrente usada pelos relatorios enquanto assinaturas vinculadas estiverem ativas.
 model SubscriptionPlan {
   id            String                    @id @default(uuid())
   name          String                    @unique
@@ -159,6 +176,8 @@ model SubscriptionPlan {
   @@map("subscription_plans")
 }
 
+/// Relacao entre plano e servicos cobertos.
+/// A cobertura decide se um atendimento de assinante entra como R$0 avulso e visita para rateio.
 model SubscriptionPlanService {
   id                 String           @id @default(uuid())
   subscriptionPlanId String
@@ -171,6 +190,8 @@ model SubscriptionPlanService {
   @@map("subscription_plan_services")
 }
 
+/// Assinatura contratada pelo cliente.
+/// Status pendente/recusado nao deve gerar receita; apenas assinatura ativa entra nas regras financeiras.
 model Subscription {
   id                 String           @id @default(uuid())
   clientId           String
@@ -193,6 +214,7 @@ model Subscription {
   @@map("subscriptions")
 }
 
+/// Categoria de produtos da loja/estoque.
 model Category {
   id        String    @id @default(uuid())
   name      String    @unique
@@ -206,6 +228,8 @@ model Category {
   @@map("categories")
 }
 
+/// Produto de estoque vendido online ou presencialmente.
+/// `visibleInStore` separa produtos publicos que geram comissao de itens internos consumidos no balcao.
 model Product {
   id             String          @id @default(uuid())
   categoryId     String
@@ -229,6 +253,7 @@ model Product {
   @@map("products")
 }
 
+/// Historico de entrada, ajuste, venda e retorno de estoque.
 model StockMovement {
   id        String            @id @default(uuid())
   productId String
@@ -243,6 +268,8 @@ model StockMovement {
   @@map("stock_movements")
 }
 
+/// Venda de produto da loja ou presencial.
+/// `barberId` preenchido identifica venda presencial/comissionavel; sem barbeiro representa pedido online.
 model Sale {
   id          String               @id @default(uuid())
   clientId    String?
@@ -271,6 +298,8 @@ model Sale {
   @@map("sales")
 }
 
+/// Item vendido com snapshot de preco e custo.
+/// A comissao de produto usa estes valores, nao o cadastro atual do produto.
 model SaleItem {
   id        String  @id @default(uuid())
   saleId    String
@@ -286,6 +315,8 @@ model SaleItem {
   @@map("sale_items")
 }
 
+/// Registro de tentativa ou confirmacao de pagamento.
+/// Apenas status pago com transacao financeira vinculada deve representar caixa efetivo.
 model Payment {
   id             String                 @id @default(uuid())
   clientId       String?
@@ -313,6 +344,7 @@ model Payment {
   @@map("payments")
 }
 
+/// Categoria administrativa de despesa.
 model ExpenseCategory {
   id        String    @id @default(uuid())
   name      String    @unique
@@ -326,6 +358,8 @@ model ExpenseCategory {
   @@map("expense_categories")
 }
 
+/// Despesa operacional da barbearia.
+/// Barbeiros podem solicitar despesas por fluxo separado; aqui ficam registros aprovados/administrativos.
 model Expense {
   id              String                 @id @default(uuid())
   categoryId      String?
@@ -346,6 +380,7 @@ model Expense {
   createdBy       User?                  @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy       User?                  @relation("ExpenseUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   transactions    FinancialTransaction[]
+  subscriptionPayout SubscriptionPayout?
 
   @@index([categoryId])
   @@index([createdById])
@@ -356,6 +391,8 @@ model Expense {
   @@map("expenses")
 }
 
+/// Snapshot de fechamento financeiro por periodo.
+/// Nao e recalculado automaticamente quando dados antigos sao ocultados ou restaurados.
 model FinancialClosure {
   id              String        @id @default(uuid())
   period          ClosurePeriod @default(WEEKLY)
@@ -375,6 +412,8 @@ model FinancialClosure {
   @@map("financial_closures")
 }
 
+/// Movimento financeiro realizado.
+/// E a fonte de caixa efetivo para receitas/despesas ja confirmadas, respeitando soft delete.
 model FinancialTransaction {
   id          String                   @id @default(uuid())
   type        FinancialTransactionType
@@ -393,6 +432,8 @@ model FinancialTransaction {
   @@map("financial_transactions")
 }
 
+/// Comissao individual do barbeiro por atendimento, venda ou lancamento manual.
+/// Repasses mensais de assinatura pagos ficam no modelo SubscriptionPayout.
 model EmployeeCommission {
   id            String       @id @default(uuid())
   barberId      String
@@ -413,6 +454,8 @@ model EmployeeCommission {
   @@map("employee_commissions")
 }
 
+/// Atendimento avulso registrado pela equipe fora do fluxo comum de agendamento do cliente.
+/// Usa serviceDate como data operacional do atendimento; createdAt e apenas trilha de cadastro.
 model ManualService {
   id             String                       @id @default(uuid())
   barberId       String
@@ -441,6 +484,8 @@ model ManualService {
   @@map("manual_services")
 }
 
+/// Servico dentro de um atendimento avulso.
+/// coveredBySubscription separa servico coberto por assinatura de extra cobrado do cliente.
 model ManualServiceItem {
   id                    String        @id @default(uuid())
   manualServiceId        String
@@ -461,6 +506,8 @@ model ManualServiceItem {
   @@map("manual_service_items")
 }
 
+/// Pedido de alteracao/exclusao em atendimento avulso quando quem solicita nao tem permissao administrativa.
+/// Guarda snapshots para aprovacao segura e eventual restauracao.
 model ManualServiceChangeRequest {
   id                String                     @id @default(uuid())
   manualServiceId   String
@@ -485,6 +532,45 @@ model ManualServiceChangeRequest {
   @@map("manual_service_change_requests")
 }
 
+/// Fechamento mensal do pool de assinaturas para cada barbeiro.
+/// Ao ser pago, cria despesa e passa a contar como ganho realizado do profissional.
+model SubscriptionPayout {
+  id                           String                    @id @default(uuid())
+  operationKey                 String?                   @unique
+  competenceMonth              String
+  barberId                     String
+  type                         SubscriptionPayoutType    @default(MAIN)
+  adjustmentNumber             Int                       @default(0)
+  status                       SubscriptionPayoutStatus  @default(PENDING)
+  revenueBase                  Decimal                   @default(0.00) @db.Decimal(10, 2)
+  businessShare                Decimal                   @default(0.00) @db.Decimal(10, 2)
+  poolAmount                   Decimal                   @default(0.00) @db.Decimal(10, 2)
+  totalSubscriberAttendances   Int                       @default(0)
+  barberSubscriberAttendances  Int                       @default(0)
+  sharePercent                 Decimal                   @default(0.0000) @db.Decimal(8, 4)
+  calculatedAmount             Decimal                   @default(0.00) @db.Decimal(10, 2)
+  paidAmount                   Decimal                   @default(0.00) @db.Decimal(10, 2)
+  paidAt                       DateTime?
+  paidById                     String?
+  expenseId                    String?                   @unique
+  snapshot                     Json
+  createdAt                    DateTime                  @default(now())
+  updatedAt                    DateTime                  @updatedAt
+  barber                       Barber                    @relation(fields: [barberId], references: [id], onDelete: Restrict)
+  paidBy                       User?                     @relation("SubscriptionPayoutPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  expense                      Expense?                  @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+
+  @@unique([competenceMonth, barberId, adjustmentNumber])
+  @@index([competenceMonth])
+  @@index([barberId])
+  @@index([status])
+  @@index([paidAt])
+  @@index([type])
+  @@map("subscription_payouts")
+}
+
+/// Faixa semanal de atendimento de um barbeiro.
+/// O agendamento publico valida se a duracao total cabe entre inicio e fim.
 model BarberAvailability {
   id        String    @id @default(uuid())
   barberId  String
@@ -503,6 +589,7 @@ model BarberAvailability {
   @@map("barber_availability")
 }
 
+/// Notificacao interna ligada a um usuario.
 model Notification {
   id        String           @id @default(uuid())
   userId    String
@@ -519,6 +606,7 @@ model Notification {
   @@map("notifications")
 }
 
+/// Endereco salvo para entrega ou cadastro do usuario.
 model Address {
   id           String    @id @default(uuid())
   userId       String
@@ -538,6 +626,7 @@ model Address {
   @@map("addresses")
 }
 
+/// Chave/valor de configuracao operacional.
 model Settings {
   id        String   @id @default(uuid())
   key       String   @unique
@@ -548,6 +637,7 @@ model Settings {
   @@map("settings")
 }
 
+/// Avaliacao de cliente para um atendimento finalizado.
 model Review {
   id            String      @id @default(uuid())
   appointmentId String      @unique
@@ -568,6 +658,8 @@ model Review {
   @@map("reviews")
 }
 
+/// Trilha de auditoria flexivel para operacoes administrativas e legadas.
+/// Alguns registros antigos dependem de metadata para limpeza/restauracao.
 model AuditLog {
   id        String   @id @default(uuid())
   userId    String?
@@ -669,6 +761,17 @@ enum ManualServiceChangeStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum SubscriptionPayoutStatus {
+  PENDING
+  PAID
+  REVIEW
+}
+
+enum SubscriptionPayoutType {
+  MAIN
+  ADJUSTMENT
 }
 
 enum NotificationType {

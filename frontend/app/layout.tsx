@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   }
 };
 
+/** Define idioma e tema comuns; a autorizacao fica a cargo das rotas, nao deste layout. */
 export default function RootLayout({
   children
 }: Readonly<{

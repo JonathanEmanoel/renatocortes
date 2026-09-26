@@ -49,8 +49,10 @@ export const useAuthStore = create<AuthState>()(
           });
 
           if (!response.ok) {
-            await supabase.auth.signOut();
             const payload = await response.json().catch(() => null);
+            if (response.status === 401 || response.status === 403) {
+              await supabase.auth.signOut();
+            }
             throw new Error(payload?.message ?? "Não encontramos seu perfil de acesso.");
           }
 

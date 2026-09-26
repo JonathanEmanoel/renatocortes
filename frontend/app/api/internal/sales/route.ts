@@ -24,14 +24,26 @@ const manualSaleSchema = z.object({
     .min(1)
 });
 
+/**
+ * Define quem pode processar pedidos da loja e escolher responsavel por venda.
+ */
 function canManageSales(role: string) {
   return role === "ADMIN" || role === "DEVELOPER";
 }
 
+/**
+ * Autoriza registro de venda presencial no proprio painel operacional.
+ * DEVELOPER fica fora deste caminho por nao representar um barbeiro vendedor.
+ */
 function canRegisterOwnSale(role: string) {
   return role === "BARBER" || role === "ADMIN";
 }
 
+/**
+ * Resolve qual barbeiro recebera a comissao de uma venda presencial.
+ * Para BARBER, qualquer `barberId` enviado no payload e ignorado; para ADMIN/DEV
+ * a selecao manual continua disponivel.
+ */
 function resolveResponsibleBarberId({
   role,
   sessionBarberId,
@@ -46,6 +58,11 @@ function resolveResponsibleBarberId({
   return sessionBarberId;
 }
 
+/**
+ * Venda presencial feita pela equipe.
+ * O barbeiro autenticado recebe a venda como responsavel; a comissao e calculada
+ * pela regra central, que ignora produtos ocultos da loja do cliente.
+ */
 export async function POST(request: Request) {
   try {
     const session = await getAuthenticatedUser();
@@ -93,6 +110,7 @@ export async function POST(request: Request) {
     });
     const totalValue = items.reduce((sum, item) => sum + item.subtotal, 0);
     const commissionPercent = PRODUCT_PROFIT_COMMISSION_PERCENT;
+    // Produtos sem visibilidade na loja geram receita para a barbearia, mas nao comissao.
     const commissionAmount = productItemsCommission(
       items.map((item) => ({
         quantity: item.quantity,
@@ -146,6 +164,7 @@ export async function POST(request: Request) {
         }
       });
 
+      // A comissao so e gravada quando a regra de produto retorna valor positivo.
       if (commissionAmount > 0) {
         await tx.employeeCommission.create({
           data: {
@@ -177,6 +196,12 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Processa pedidos abertos da loja do cliente.
+ * Cancelamento nao gera receita; conclusao baixa estoque, registra entrada
+ * financeira e cria comissao apenas quando existe barbeiro responsavel e produto
+ * elegivel pela regra central de visibilidade/lucro.
+ */
 export async function PATCH(request: Request) {
   try {
     const session = await getAuthenticatedUser();
@@ -236,6 +261,7 @@ export async function PATCH(request: Request) {
         }
       });
 
+      // Pedidos da loja tambem obedecem a regra de comissao por produto visivel.
       if (sale.barberId && commissionAmount > 0) {
         await tx.employeeCommission.create({
           data: {

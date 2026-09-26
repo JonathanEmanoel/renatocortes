@@ -20,10 +20,19 @@ const requestSchema = z.object({
   highQuantityConfirmed: z.boolean().optional()
 });
 
+/**
+ * Permite selecionar outro barbeiro somente para perfis de gestao.
+ * Barbeiros comuns sempre registram para o proprio `barberId` vinculado a sessao.
+ */
 function canChooseBarber(role: string) {
   return role === "ADMIN" || role === "DEVELOPER";
 }
 
+/**
+ * Decide qual barbeiro recebera o credito operacional do atendimento.
+ * O campo enviado pela UI e ignorado para BARBER para impedir que um barbeiro
+ * lance comissao em nome de outro.
+ */
 function resolveResponsibleBarberId({
   role,
   sessionBarberId,
@@ -38,6 +47,11 @@ function resolveResponsibleBarberId({
   return sessionBarberId;
 }
 
+/**
+ * Registro de atendimento avulso.
+ * BARBER sempre registra para o proprio barbeiro; ADMIN/DEVELOPER podem escolher
+ * outro responsavel quando a tela administrativa precisar lancar por alguem.
+ */
 export async function POST(request: Request) {
   try {
     const session = await getAuthenticatedUser();
@@ -62,6 +76,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Confirme a quantidade alta antes de registrar." }, { status: 400 });
     }
 
+    // createManualService concentra preco, assinatura, comissao e transacao financeira.
     const manualService = await createManualService({
       barberId,
       serviceDate: parseManualServiceDateInput(payload.data.serviceDate),

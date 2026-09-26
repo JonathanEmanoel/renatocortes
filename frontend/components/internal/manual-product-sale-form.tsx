@@ -18,6 +18,11 @@ type ProductOption = {
 
 const inputClass = "min-h-12 w-full min-w-0 rounded-[10px] border border-primary/20 bg-black/45 px-4 text-base font-semibold text-white outline-none transition focus:border-primary";
 
+/**
+ * Select customizado para produtos presenciais.
+ * Mostra estoque e se o item aparece na loja, mas a elegibilidade de comissao e
+ * a baixa de estoque continuam sendo calculadas no servidor.
+ */
 function ProductSelect({
   products,
   value,
@@ -82,6 +87,8 @@ function ProductSelect({
   );
 }
 
+/** Oferece produtos ativos para venda presencial, mesmo fora da loja ou sem saldo positivo.
+ * O total e uma previa; validacao de estoque, preco e permissao pertence ao endpoint de vendas. */
 export function ManualProductSaleForm({ products }: { products: ProductOption[] }) {
   const router = useRouter();
   const availableProducts = products.filter((product) => product.active);
@@ -95,6 +102,8 @@ export function ManualProductSaleForm({ products }: { products: ProductOption[] 
   const selectedProduct = useMemo(() => availableProducts.find((product) => product.id === productId), [availableProducts, productId]);
   const total = (selectedProduct?.price ?? 0) * quantity;
 
+  /** Envia um unico item, sem preco calculado no cliente; limpa quantidade e dados opcionais apos sucesso.
+   * A validacao local verifica selecao e minimo um, nao integralidade nem saldo de estoque. */
   async function submitSale() {
     if (!selectedProduct) {
       setMessage("Selecione um produto disponivel.");

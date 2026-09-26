@@ -7,24 +7,13 @@ import { Badge } from "@/components/client/badge";
 import { Button } from "@/components/ui/button";
 import type { Appointment } from "@/types/client-area";
 import { cn } from "@/utils/cn";
+import { clientBookingDates as buildDates } from "@/lib/client-scheduling";
+import { useClientSlots } from "@/lib/use-client-slots";
 
 type AppointmentCardProps = {
   appointment: Appointment;
   canManage?: boolean;
 };
-
-const availableTimes = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
-
-function buildDates() {
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() + index);
-    return {
-      value: date.toISOString().slice(0, 10),
-      label: new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date).replace(".", "")
-    };
-  });
-}
 
 export function AppointmentCard({ appointment, canManage = true }: AppointmentCardProps) {
   const router = useRouter();
@@ -34,7 +23,8 @@ export function AppointmentCard({ appointment, canManage = true }: AppointmentCa
   const [isRescheduling, setIsRescheduling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState(() => buildDates()[0].value);
-  const [rescheduleTime, setRescheduleTime] = useState(availableTimes[0]);
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const { times: availableTimes, message: slotMessage } = useClientSlots(isRescheduleOpen ? new URLSearchParams({ appointmentId: appointment.id, date: rescheduleDate }).toString() : null);
   const dates = buildDates();
 
   async function cancelAppointment() {
@@ -70,6 +60,7 @@ export function AppointmentCard({ appointment, canManage = true }: AppointmentCa
   }
 
   async function confirmReschedule() {
+    if (!availableTimes.includes(rescheduleTime)) { setActionError("Escolha um horario disponivel."); return; }
     setActionError(null);
     setIsRescheduling(true);
     try {
@@ -195,6 +186,7 @@ export function AppointmentCard({ appointment, canManage = true }: AppointmentCa
             </div>
 
             <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4">
+              {slotMessage ? <p className="col-span-full text-sm text-primary" role="status">{slotMessage}</p> : null}
               {availableTimes.map((item) => (
                 <button key={item} type="button" onClick={() => setRescheduleTime(item)} className={cn("rounded-[8px] border px-4 py-4 font-black transition", rescheduleTime === item ? "border-primary bg-primary text-black" : "border-white/14 bg-card text-white")}>
                   {item}

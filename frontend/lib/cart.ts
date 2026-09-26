@@ -9,6 +9,11 @@ export type StoredCartItem = {
 
 export const CART_STORAGE_KEY = "renato-cortes-cart";
 
+/**
+ * Recupera o carrinho local sem interromper renderizacao no servidor ou por JSON
+ * corrompido. Valida somente se e array; precos/estoque armazenados nao sao fonte
+ * confiavel para a API que efetiva a compra.
+ */
 export function readStoredCart() {
   if (typeof window === "undefined") return [];
 
@@ -22,10 +27,16 @@ export function readStoredCart() {
   }
 }
 
+/** Persiste no navegador; deve ser chamada em fluxo cliente com localStorage disponivel. */
 export function writeStoredCart(items: StoredCartItem[]) {
   window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
 }
 
+/**
+ * Unifica itens pelo produto e limita incrementos ao estoque do item ja salvo.
+ * Um produto novo e inserido como recebido; a verificacao definitiva de estoque
+ * e preco continua no servidor porque os dados locais podem estar desatualizados.
+ */
 export function addStoredCartItem(item: StoredCartItem) {
   const current = readStoredCart();
   const existing = current.find((cartItem) => cartItem.id === item.id);

@@ -9,6 +9,11 @@ const reviewSchema = z.object({
   comment: z.string().trim().max(500).optional()
 });
 
+/**
+ * Grava nota 1..5 e comentario do CLIENT para visita propria COMPLETED e nao excluida.
+ * O upsert por appointmentId permite revisar a avaliacao sem criar outra para a mesma visita.
+ * Barbeiro e cliente vem do agendamento consultado, nunca de ids enviados para atribuir autoria.
+ */
 export async function POST(request: Request) {
   try {
     const session = await getAuthenticatedClient();
@@ -26,7 +31,8 @@ export async function POST(request: Request) {
         clientId: session.client.id,
         status: "COMPLETED",
         deletedAt: null
-      }
+      },
+      select: { id: true, clientId: true, barberId: true }
     });
 
     if (!appointment) {

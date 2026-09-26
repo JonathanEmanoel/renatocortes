@@ -12,6 +12,9 @@ type MaintenanceConsoleProps = {
   hiddenView?: boolean;
 };
 
+/** Conduz selecao, previa e confirmacao de manutencao usando linhas fornecidas pelo servidor.
+ * Na vista de ocultos a exclusao e definitiva; restauracao usa uma chamada separada.
+ * Restricao a desenvolvedor, protecao de registros e atomicidade precisam ser impostas pela API. */
 export function MaintenanceConsole({ category, rows, hiddenView = false }: MaintenanceConsoleProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [mode, setMode] = useState<MaintenanceMode>("hide");
@@ -23,18 +26,21 @@ export function MaintenanceConsole({ category, rows, hiddenView = false }: Maint
   const selectableRows = useMemo(() => rows.filter((row) => !row.protected), [rows]);
   const effectiveMode: MaintenanceMode = hiddenView ? "delete" : mode;
 
+  /** Invalida a previa ao mudar os IDs para nao confirmar o resumo de outra selecao. */
   function toggle(id: string) {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
     setPreview(null);
     setMessage(null);
   }
 
+  /** Seleciona apenas as linhas recebidas que nao estao protegidas, e descarta a previa anterior. */
   function selectAll() {
     setSelectedIds(selectableRows.map((row) => row.id));
     setPreview(null);
     setMessage(null);
   }
 
+  /** Descarta selecao, previa e texto de confirmacao para iniciar outra operacao. */
   function clearSelection() {
     setSelectedIds([]);
     setPreview(null);
@@ -42,6 +48,8 @@ export function MaintenanceConsole({ category, rows, hiddenView = false }: Maint
     setConfirmation("");
   }
 
+  /** Envia o estado atual: POST solicita previa, PATCH restaura e DELETE executa o modo escolhido.
+   * restoreStock expressa uma opcao, nao garante reposicao; nao ha token de previa neste payload. */
   async function callMaintenance(method: "POST" | "DELETE" | "PATCH") {
     const response = await fetch("/api/internal/maintenance", {
       method,
@@ -53,6 +61,7 @@ export function MaintenanceConsole({ category, rows, hiddenView = false }: Maint
     return data;
   }
 
+  /** Busca impactos sem executar a exclusao; o resumo recebido fica no estado local ate ser invalidado. */
   function handlePreview() {
     setMessage(null);
     startTransition(async () => {
@@ -65,6 +74,7 @@ export function MaintenanceConsole({ category, rows, hiddenView = false }: Maint
     });
   }
 
+  /** Pede confirmacao simples e solicita restauracao dos IDs; recarrega a pagina apos sucesso. */
   function handleRestore() {
     if (!window.confirm("Restaurar os registros selecionados para as telas e relatorios do sistema?")) return;
     setMessage(null);
@@ -82,6 +92,8 @@ export function MaintenanceConsole({ category, rows, hiddenView = false }: Maint
     });
   }
 
+  /** Solicita ocultacao ou exclusao com o estado atual, apos o fluxo visual de previa e EXCLUIR.
+   * A API precisa revalidar impactos e confirmacao; o modal nao constitui garantia transacional. */
   function handleExecute() {
     setMessage(null);
     startTransition(async () => {

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 dotenv.config();
 
+// Variaveis essenciais da API backend, com defaults seguros para desenvolvimento local.
 const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
   PORT: z.coerce.number().default(3333),

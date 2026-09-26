@@ -42,7 +42,7 @@ export default async function AdminFinancePage({ searchParams }: PageProps) {
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
 
   const periodMetrics = selectedRange.invalid
-    ? { grossRevenue: 0, paidExpenses: 0 }
+    ? { grossRevenue: 0, paidExpenses: 0, netProfit: 0 }
     : await getFinanceMetrics(selectedRange.start, selectedRange.end);
   const annualMetrics = await getFinanceMetrics(yearStart, yearEnd);
   const [expenseCategories, overdueExpenses, dueTodayExpenses, dueSoonExpenses] =
@@ -106,8 +106,10 @@ export default async function AdminFinancePage({ searchParams }: PageProps) {
           }}
           periodRevenue={periodMetrics.grossRevenue}
           periodExpenses={periodMetrics.paidExpenses}
+          periodNetProfit={periodMetrics.netProfit}
           annualRevenue={annualMetrics.grossRevenue}
           annualExpenses={annualMetrics.paidExpenses}
+          annualNetProfit={annualMetrics.netProfit}
           overdueCount={overdueExpenses}
           dueTodayCount={dueTodayExpenses}
           dueSoonCount={dueSoonExpenses}

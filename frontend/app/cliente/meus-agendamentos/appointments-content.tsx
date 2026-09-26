@@ -7,6 +7,8 @@ import { ClientShell } from "@/components/client/client-shell";
 import { SectionTitle } from "@/components/client/section-title";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/utils/cn";
+import { clientBookingDates as buildDates } from "@/lib/client-scheduling";
+import { useClientSlots } from "@/lib/use-client-slots";
 import type { Appointment } from "@/types/client-area";
 
 type AppointmentItem = Appointment & {
@@ -16,31 +18,14 @@ type AppointmentItem = Appointment & {
   barberId: string;
 };
 
-type SchedulingDate = {
-  value: string;
-  label: string;
-};
-
-const availableTimes = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
-
-function buildDates(): SchedulingDate[] {
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date();
-    date.setDate(date.getDate() + index);
-    return {
-      value: date.toISOString().slice(0, 10),
-      label: new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" }).format(date).replace(".", "")
-    };
-  });
-}
-
 export function AppointmentsContent({ appointments }: { appointments: AppointmentItem[] }) {
   const router = useRouter();
   const [tab, setTab] = useState<"upcoming" | "history">("upcoming");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [rescheduling, setRescheduling] = useState<AppointmentItem | null>(null);
   const [rescheduleDate, setRescheduleDate] = useState(buildDates()[0].value);
-  const [rescheduleTime, setRescheduleTime] = useState(availableTimes[0]);
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  const { times: availableTimes, message: slotMessage } = useClientSlots(rescheduling ? new URLSearchParams({ appointmentId: rescheduling.id, date: rescheduleDate }).toString() : null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const dates = useMemo(() => buildDates(), []);
   const visible = tab === "upcoming" ? appointments.filter((appointment) => appointment.isUpcoming) : appointments.filter((appointment) => !appointment.isUpcoming);
@@ -76,6 +61,7 @@ export function AppointmentsContent({ appointments }: { appointments: Appointmen
 
   async function confirmReschedule() {
     if (!rescheduling) return;
+    if (!availableTimes.includes(rescheduleTime)) { setFeedback("Escolha um horario disponivel."); return; }
 
     setFeedback(null);
     setIsSubmitting(true);
@@ -164,6 +150,7 @@ export function AppointmentsContent({ appointments }: { appointments: Appointmen
             </div>
 
             <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-4">
+              {slotMessage ? <p className="col-span-full text-sm text-primary" role="status">{slotMessage}</p> : null}
               {availableTimes.map((item) => (
                 <button
                   key={item}

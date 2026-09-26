@@ -9,6 +9,7 @@ import { ServiceCard } from "@/components/client/service-card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/format";
 import { cn } from "@/utils/cn";
+import { useClientSlots } from "@/lib/use-client-slots";
 import type { Barber, Service } from "@/types/client-area";
 
 type SchedulingDate = {
@@ -25,20 +26,6 @@ type SchedulingFormProps = {
 };
 
 const steps = ["Servico", "Barbeiro", "Data", "Horario", "Resumo"];
-const slotIntervalMinutes = 60;
-const blockedStartTimes = new Set(["12:00"]);
-
-function minutesFromTime(value: string) {
-  const [hours = "0", minutes = "0"] = value.split(":");
-  return Number(hours) * 60 + Number(minutes);
-}
-
-function timeFromMinutes(value: number) {
-  const hours = Math.floor(value / 60);
-  const minutes = value % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-}
-
 function weekDayFromDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day).getDay();
@@ -54,6 +41,9 @@ export function SchedulingForm({ services, barbers, dates, availabilityByBarber 
   const [whatsAppSuccessUrl, setWhatsAppSuccessUrl] = useState<string | null>(null);
   const [calendarSuccessUrl, setCalendarSuccessUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const slotParams = new URLSearchParams({ barberId, date });
+  serviceIds.forEach((id) => slotParams.append("serviceId", id));
+  const { times: filteredTimes, message: slotMessage, loading: slotsLoading } = useClientSlots(serviceIds.length ? slotParams.toString() : null);
 
   const selected = useMemo(() => {
     const selectedServices = serviceIds
@@ -70,20 +60,6 @@ export function SchedulingForm({ services, barbers, dates, availabilityByBarber 
   }, [services, serviceIds, barbers, barberId, dates, date]);
   const selectedAvailability = useMemo(() => availabilityByBarber[barberId] ?? [], [availabilityByBarber, barberId]);
   const availableDates = useMemo(() => new Set(selectedAvailability.map((item) => item.weekDay)), [selectedAvailability]);
-  const filteredTimes = useMemo(() => {
-    const dayAvailability = selectedAvailability.find((item) => item.weekDay === weekDayFromDate(date));
-    if (!dayAvailability) return [];
-    const totalDuration = Math.max(selected.totalDuration, 30);
-    const start = minutesFromTime(dayAvailability.startTime);
-    const end = minutesFromTime(dayAvailability.endTime);
-    const times: string[] = [];
-    for (let current = start; current + totalDuration <= end; current += slotIntervalMinutes) {
-      const slot = timeFromMinutes(current);
-      if (!blockedStartTimes.has(slot)) times.push(slot);
-    }
-    return times;
-  }, [date, selected.totalDuration, selectedAvailability]);
-
   useEffect(() => {
     if (!availableDates.has(weekDayFromDate(date))) {
       const nextDate = dates.find((item) => availableDates.has(weekDayFromDate(item.value)));
@@ -92,10 +68,10 @@ export function SchedulingForm({ services, barbers, dates, availabilityByBarber 
   }, [availableDates, date, dates]);
 
   useEffect(() => {
-    if (filteredTimes.length > 0 && !filteredTimes.includes(time)) {
-      setTime(filteredTimes[0]);
+    if (!slotsLoading && !filteredTimes.includes(time)) {
+      setTime(filteredTimes[0] ?? "");
     }
-  }, [filteredTimes, time]);
+  }, [filteredTimes, time, slotsLoading]);
 
   function toggleService(serviceId: string) {
     setServiceIds((current) => {
@@ -270,10 +246,11 @@ export function SchedulingForm({ services, barbers, dates, availabilityByBarber 
         {step === 3 ? (
           <>
             <SectionTitle title="Selecionar Horario" />
+            {filteredTimes.length > 0 && slotMessage ? <p className="mb-4 text-sm text-primary" role="status">{slotMessage}</p> : null}
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
               {filteredTimes.length === 0 ? (
                 <p className="col-span-full rounded-[8px] border border-primary/30 bg-primary/10 p-4 text-sm font-bold text-primary">
-                  O barbeiro nao atende nesta data ou nao ha horario disponivel para a duracao selecionada.
+                  {slotMessage}
                 </p>
               ) : null}
               {filteredTimes.map((item) => (

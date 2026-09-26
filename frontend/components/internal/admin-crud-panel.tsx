@@ -111,10 +111,12 @@ const emptyBarber = {
   endTime: "18:00"
 };
 
+/** Converte uma virgula decimal em ponto e usa zero para entrada invalida; nao normaliza milhares. */
 function parseNumber(value: string) {
   return Number(value.replace(",", ".")) || 0;
 }
 
+/** Padroniza rotulo e espaçamento dos campos dos quatro formularios administrativos. */
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="grid gap-2 text-sm font-bold uppercase tracking-[0.08em] text-white/70">
@@ -127,6 +129,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const inputClass =
   "min-h-12 rounded-[10px] border border-primary/20 bg-black/45 px-4 text-base font-semibold text-white outline-none transition focus:border-primary";
 
+/** Mantem formularios independentes de catalogo e dados operacionais da equipe.
+ * Os endpoints recebem as alteracoes; este componente nao verifica papel nem cria contas no Auth. */
 export function AdminCrudPanel({ categories, products, services, plans, barbers }: AdminCrudPanelProps) {
   const [tab, setTab] = useState<Tab>("products");
   const [message, setMessage] = useState("");
@@ -137,6 +141,8 @@ export function AdminCrudPanel({ categories, products, services, plans, barbers 
 
   const currentBarber = useMemo(() => barbers.find((barber) => barber.id === barberForm.barberId), [barberForm.barberId, barbers]);
 
+  /** Envia a mutacao e agenda recarga apos sucesso; erros HTTP sao lancados ao chamador.
+   * Nao ha trava de envio nem transacao abrangendo as diferentes abas. */
   async function requestJson(url: string, method: "POST" | "PATCH" | "DELETE", body: unknown) {
     setMessage("");
     const response = await fetch(url, {
@@ -150,24 +156,28 @@ export function AdminCrudPanel({ categories, products, services, plans, barbers 
     window.setTimeout(() => window.location.reload(), 700);
   }
 
+  /** Copia o produto para edicao; ID ausente retorna aos defaults de criacao e primeira categoria. */
   function selectProduct(id: string) {
     const product = products.find((item) => item.id === id);
     if (!product) return setProductForm({ ...emptyProduct, categoryId: categories[0]?.id ?? "" });
     setProductForm({ ...product, productId: product.id });
   }
 
+  /** Copia o servico para edicao ou recupera os defaults de criacao quando o ID nao existe. */
   function selectService(id: string) {
     const service = services.find((item) => item.id === id);
     if (!service) return setServiceForm(emptyService);
     setServiceForm({ ...service, serviceId: service.id });
   }
 
+  /** Copia o plano para edicao ou recupera os defaults de criacao quando o ID nao existe. */
   function selectPlan(id: string) {
     const plan = plans.find((item) => item.id === id);
     if (!plan) return setPlanForm(emptyPlan);
     setPlanForm({ ...plan, planId: plan.id });
   }
 
+  /** Carrega somente campos operacionais e percentuais; nome e email da conta nao sao editados aqui. */
   function selectBarber(id: string) {
     const barber = barbers.find((item) => item.id === id);
     if (!barber) return setBarberForm(emptyBarber);
@@ -183,21 +193,25 @@ export function AdminCrudPanel({ categories, products, services, plans, barbers 
     });
   }
 
+  /** Escolhe PATCH pela presenca de productId; sem ele solicita criacao com o formulario completo. */
   async function saveProduct() {
     const payload = { ...productForm };
     await requestJson("/api/internal/products", payload.productId ? "PATCH" : "POST", payload);
   }
 
+  /** Escolhe PATCH pela presenca de serviceId; sem ele solicita criacao, incluindo preco e duracao. */
   async function saveService() {
     const payload = { ...serviceForm };
     await requestJson("/api/internal/services", payload.serviceId ? "PATCH" : "POST", payload);
   }
 
+  /** Escolhe PATCH pela presenca de planId; envia valor e limites do plano sem calcular repasses. */
   async function savePlan() {
     const payload = { ...planForm };
     await requestJson("/api/internal/plans", payload.planId ? "PATCH" : "POST", payload);
   }
 
+  /** Exige selecionar uma conta existente e envia apenas atualizacao operacional; nao cadastra usuario. */
   async function saveBarber() {
     if (!barberForm.barberId) {
       setMessage("Selecione um barbeiro já cadastrado no Auth.");

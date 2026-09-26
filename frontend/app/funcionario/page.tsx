@@ -45,6 +45,20 @@ function appointmentServicesLabel(appointment: { service: { name: string }; serv
   return appointment.service.name;
 }
 
+const todayAppointmentSelect = {
+  id: true,
+  status: true,
+  dataHora: true,
+  client: {
+    select: {
+      user: { select: { name: true } },
+      subscriptions: { where: { active: true, deletedAt: null }, select: { id: true } }
+    }
+  },
+  service: { select: { name: true } },
+  services: { select: { service: { select: { name: true } } } }
+} as const;
+
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     PENDING: "Pendente",
@@ -84,6 +98,11 @@ function distinctAttendedClients(report: Awaited<ReturnType<typeof getBarberRepo
   return clients.size + unnamedManual;
 }
 
+/*
+ * Home do barbeiro.
+ * Todos os cards financeiros e operacionais saem do mesmo relatorio do servidor
+ * para que painel, grafico diario e relatorio administrativo usem o mesmo criterio.
+ */
 export default async function BarberPanelPage({ searchParams }: PageProps) {
   const session = await getAuthenticatedUser();
 
@@ -119,6 +138,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
     commission: "all" as const
   };
 
+  // getBarberReport limita os dados ao barbeiro logado e consolida site, avulsos, assinantes e vendas.
   const report = await getBarberReport(reportFilters);
   const [
     todayAppointments,
@@ -129,7 +149,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
   ] = await Promise.all([
     prisma.appointment.findMany({
       where: { barberId, dataHora: { gte: todayStart, lte: todayEnd }, deletedAt: null },
-      include: { client: { include: { user: true, subscriptions: { where: { active: true, deletedAt: null } } } }, service: true, services: { include: { service: true } } },
+      select: todayAppointmentSelect,
       orderBy: { dataHora: "asc" },
       take: 20
     }),
@@ -151,7 +171,11 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
   const completedSiteRows = report.sections.site.filter((row) => row.status === "COMPLETED" && row.financialGross > 0);
   const salesWithCommission = report.sections.sales.filter((row) => row.commission > 0);
   const salesWithoutCommission = report.sections.sales.filter((row) => row.commission === 0);
-  const producedAppointments = completedSiteRows.length + report.summary.manualCount + report.summary.subscriptionBarberAppointments;
+  // Atendimentos contam visitas/registros, nao quantidade de servicos dentro do mesmo atendimento.
+  const producedAppointments = new Set([
+    ...completedSiteRows.map((row) => row.id),
+    ...report.sections.subscription.filter((row) => row.status === "COMPLETED").map((row) => row.id)
+  ]).size + report.summary.manualCount;
   const attendedClients = distinctAttendedClients(report);
   const nextAppointment = todayAppointments.find((appointment) => ["PENDING", "CONFIRMED"].includes(appointment.status) && appointment.dataHora >= now);
   const remainingTodayAppointments = todayAppointments.filter((appointment) => appointment.id !== nextAppointment?.id);
@@ -161,7 +185,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
   const mainStats = [
     { label: "Atendimentos", value: producedAppointments, icon: CalendarDays, hint: "Concluidos pelo site, assinantes atendidos e avulsos." },
     { label: "Faturamento produzido", value: formatCurrency(report.summary.grossProduced), icon: TrendingUp, hint: "Producao atribuida ao profissional no periodo." },
-    { label: "Comissao estimada", value: formatCurrency(report.summary.totalCommission), icon: BarChart3, hint: "Estimativa conforme regras da barbearia." },
+    { label: "Ganhos realizados", value: formatCurrency(report.summary.totalCommission), icon: BarChart3, hint: "Comissoes e repasses efetivamente pagos no periodo." },
     { label: "Clientes atendidos", value: attendedClients, icon: Users, hint: "Clientes reais identificados no periodo." }
   ];
 
@@ -310,7 +334,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                 count: report.summary.subscriptionBarberAppointments,
                 produced: report.summary.subscriptionRevenue,
                 commission: report.summary.subscriptionCommission,
-                detail: `${report.summary.subscriptionBarberAppointments}/${report.summary.subscriptionTotalAppointments} atendimentos no pool de 40%.`
+                detail: `${report.summary.subscriptionBarberAppointments}/${report.summary.subscriptionTotalAppointments} atendimentos no pool. Estimativa mensal: ${formatCurrency(report.summary.subscriptionEstimatedCommission)}.`
               },
               {
                 label: "Produtos com comissao",
@@ -338,7 +362,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
           </div>
 
           <div className="mt-5 rounded-[12px] border border-primary/25 bg-primary/10 p-4">
-            <p className="text-sm font-black uppercase tracking-[0.14em] text-primary">Comissao estimada do periodo</p>
+            <p className="text-sm font-black uppercase tracking-[0.14em] text-primary">Ganhos realizados no periodo</p>
             <strong className="mt-1 block text-3xl text-primary">{formatCurrency(report.summary.totalCommission)}</strong>
           </div>
         </section>

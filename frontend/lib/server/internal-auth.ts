@@ -56,10 +56,23 @@ const internalProfiles: Record<string, InternalProfile> = {
   }
 };
 
+/**
+ * Resolve contas internas fixas pelo e-mail autenticado no Supabase.
+ * Essa lista e a camada que impede admin, barbeiros e dev de serem tratados
+ * como CLIENT quando entram pelo mesmo formulario publico de login.
+ */
 export function getInternalProfileByEmail(email: string) {
   return internalProfiles[email.trim().toLowerCase()] ?? null;
 }
 
+/**
+ * Sincroniza o usuario autenticado no Supabase com o cadastro interno.
+ *
+ * A busca por `authId` ou e-mail existe para recuperar contas antigas da equipe
+ * que ja estavam cadastradas antes da correção de roteamento por perfil. Quando
+ * o e-mail pertence a uma conta interna, o papel salvo no banco e realinhado ao
+ * perfil fixo para que o redirecionamento use ADMIN/BARBER/DEVELOPER.
+ */
 async function resolveDbSession(user: Awaited<ReturnType<ReturnType<typeof createClient>["auth"]["getUser"]>>["data"]["user"]): Promise<AuthenticatedSession | null> {
   if (!user?.id || !user.email) return null;
 
@@ -99,6 +112,7 @@ async function resolveDbSession(user: Awaited<ReturnType<ReturnType<typeof creat
       });
 
       if (internalProfile?.role === "BARBER" || internalProfile?.role === "ADMIN") {
+        // Barbeiros/admins precisam do registro Barber para acessar paines operacionais.
         await tx.barber.create({
           data: {
             userId: createdUser.id,
@@ -150,6 +164,7 @@ async function resolveDbSession(user: Awaited<ReturnType<ReturnType<typeof creat
   }
 
   if (internalProfile && (internalProfile.role === "BARBER" || internalProfile.role === "ADMIN") && !dbUser.barber) {
+    // Corrige contas antigas da equipe que existiam como User mas ainda nao tinham Barber.
     const barber = await prisma.barber.create({
       data: {
         userId: dbUser.id,
@@ -167,6 +182,12 @@ async function resolveDbSession(user: Awaited<ReturnType<ReturnType<typeof creat
   };
 }
 
+/**
+ * Retorna a sessao do usuario a partir dos cookies do Next/Supabase.
+ * Alem de validar o token, tambem chama a sincronizacao com `User`, `Barber` e
+ * `Client`, por isso rotas server-side devem preferir este helper ao acesso
+ * direto ao Supabase quando precisam aplicar permissao por perfil.
+ */
 export async function getAuthenticatedUser(): Promise<AuthenticatedSession | null> {
   const cookieStore = await cookies();
   const supabase = createClient(cookieStore);
@@ -182,6 +203,12 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedSession | nul
   return resolveDbSession(user);
 }
 
+/**
+ * Variante para chamadas autenticadas por Bearer token.
+ * Usada por APIs que recebem o token explicitamente; a sessao nao e persistida
+ * no cliente Supabase para evitar que uma requisicao reaproveite credenciais de
+ * outra chamada no ambiente serverless.
+ */
 export async function getAuthenticatedUserFromToken(accessToken: string): Promise<AuthenticatedSession | null> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;

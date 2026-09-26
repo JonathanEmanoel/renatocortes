@@ -7,6 +7,11 @@ import {
 } from "@/lib/google-calendar";
 import { getAuthenticatedClient } from "@/lib/server/auth";
 
+/**
+ * Consome code e state (id do agendamento) apos OAuth de um CLIENT autenticado.
+ * Exige agendamento proprio nao excluido antes de trocar o codigo e criar evento externo.
+ * Nao guarda id do evento para deduplicar; sucesso e falha redirecionam para a mesma tela.
+ */
 export async function GET(request: Request) {
   try {
     const session = await getAuthenticatedClient();
@@ -29,10 +34,11 @@ export async function GET(request: Request) {
         clientId: session.client.id,
         deletedAt: null
       },
-      include: {
-        barber: { include: { user: true } },
-        service: true,
-        services: { include: { service: true } }
+      select: {
+        dataHora: true,
+        barber: { select: { user: { select: { name: true, phone: true } } } },
+        service: { select: { name: true, duration: true } },
+        services: { select: { duration: true, service: { select: { name: true } } } }
       }
     });
 
@@ -40,6 +46,7 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL("/cliente/meus-agendamentos", request.url));
     }
 
+    // Itens preservam a duracao salva; o relacionamento singular atende registros anteriores aos itens.
     const services = appointment.services.length
       ? appointment.services
       : [{ service: appointment.service, duration: appointment.service.duration }];

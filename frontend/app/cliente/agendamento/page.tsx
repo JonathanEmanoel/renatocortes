@@ -23,11 +23,11 @@ const serviceOrder = [
 ];
 
 function buildDates() {
-  const formatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
-  const weekDayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
+  const formatter = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
+  const weekDayFormatter = new Intl.DateTimeFormat("pt-BR", { weekday: "short", timeZone: "America/Sao_Paulo" });
   const today = todayDateInput();
   return Array.from({ length: 7 }, (_, index) => {
-    const value = addDaysInput(today, index + 1);
+    const value = addDaysInput(today, index);
     const date = startOfSaoPauloDay(value);
     const weekDay = weekDayFormatter.format(date).replace(".", "").toUpperCase();
     return {

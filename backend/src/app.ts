@@ -7,6 +7,7 @@ import { routes } from "./routes/index.js";
 
 export const app = express();
 
+// Middlewares globais da API Express: protecao HTTP, CORS restrito ao frontend e JSON.
 app.use(helmet());
 app.use(
   cors({
@@ -14,5 +15,7 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Todas as rotas versionadas entram em /api; erros nao tratados caem no handler padrao.
 app.use("/api", routes);
 app.use(errorHandler);

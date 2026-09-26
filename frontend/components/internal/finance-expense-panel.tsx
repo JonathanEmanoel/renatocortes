@@ -71,8 +71,10 @@ type FinanceExpensePanelProps = {
   };
   periodRevenue: number;
   periodExpenses: number;
+  periodNetProfit: number;
   annualRevenue: number;
   annualExpenses: number;
+  annualNetProfit: number;
   overdueCount: number;
   dueTodayCount: number;
   dueSoonCount: number;
@@ -115,6 +117,7 @@ const emptyExpense: ExpenseForm = {
   notes: ""
 };
 
+/** Aceita virgula decimal removendo pontos de milhar nesse caso; entradas nao numericas viram zero. */
 function parseNumber(value: string) {
   const normalized = value.includes(",") ? value.replace(/\./g, "").replace(",", ".") : value;
   return Number(normalized) || 0;
@@ -124,6 +127,7 @@ function moneyInput(value: number) {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Produz o dia UTC para preencher paidAt; nao representa necessariamente o dia local da barbearia. */
 function todayInputValue() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -194,14 +198,19 @@ function SelectControl({
   );
 }
 
+/** Edita despesas e solicita baixas pela API interna; totais e periodo chegam do servidor.
+ * O painel nao autoriza usuarios nem executa transacoes. Vencimento (dueDate) e
+ * pagamento (paidAt) permanecem campos distintos, inclusive em despesas pontuais. */
 export function FinanceExpensePanel({
   categories,
   expenses,
   periodFilter,
   periodRevenue,
   periodExpenses,
+  periodNetProfit,
   annualRevenue,
   annualExpenses,
+  annualNetProfit,
   overdueCount,
   dueTodayCount,
   dueSoonCount
@@ -236,17 +245,19 @@ export function FinanceExpensePanel({
     .reduce((sum, expense) => sum + expense.amount, 0);
   const pendingApprovalExpenses = expenses.filter((expense) => expense.status === "PENDING");
   const paidAmount = expenses.filter((expense) => expense.status === "PAID").reduce((sum, expense) => sum + expense.amount, 0);
-  const monthProfit = periodRevenue - periodExpenses;
-  const annualProfit = annualRevenue - annualExpenses;
+  const monthProfit = periodNetProfit;
+  const annualProfit = annualNetProfit;
   const monthMargin = periodRevenue > 0 ? (monthProfit / periodRevenue) * 100 : 0;
   const exportQuery = `period=${periodFilter.period}&date=${periodFilter.date}&month=${periodFilter.month}&startDate=${periodFilter.startDate}&endDate=${periodFilter.endDate}`;
 
+  /** Retorna a criacao pendente com a primeira categoria, descartando a selecao e a mensagem. */
   function resetForm() {
     setMessage("");
     setIsOneOff(false);
     setForm({ ...emptyExpense, categoryId: categories[0]?.id ?? "" });
   }
 
+  /** Prepara despesa pontual ja paga, sem vencimento, com paidAt preenchido pelo dia UTC. */
   function startOneOffExpense() {
     setMessage("");
     setIsOneOff(true);
@@ -258,6 +269,7 @@ export function FinanceExpensePanel({
     });
   }
 
+  /** Ao ativar, remove vencimento e converte apenas PENDING em PAID; desativar nao desfaz esses valores. */
   function toggleOneOff(checked: boolean) {
     setIsOneOff(checked);
     setForm((current) => ({
@@ -268,6 +280,7 @@ export function FinanceExpensePanel({
     }));
   }
 
+  /** Carrega o registro no formulario; ausencia de vencimento determina o modo pontual e metodo vazio vira PIX. */
   function selectExpense(id: string) {
     const expense = expenses.find((item) => item.id === id);
     if (!expense) {
@@ -291,6 +304,8 @@ export function FinanceExpensePanel({
     });
   }
 
+  /** Normaliza textos e valor para a API; omite vencimento no modo pontual.
+   * PAID sem data recebe hoje em UTC; outros status ainda podem enviar paidAt informado. */
   function expensePayload() {
     const paidAt = form.status === "PAID" ? form.paidAt || todayInputValue() : form.paidAt || undefined;
 
@@ -308,6 +323,8 @@ export function FinanceExpensePanel({
     };
   }
 
+  /** Centraliza criacao, edicao e exclusao; atualiza dados somente apos resposta HTTP bem-sucedida.
+   * Nao bloqueia chamadas simultaneas nem captura falha de rede; a API decide permissao e persistencia. */
   async function requestExpense(method: "POST" | "PATCH" | "DELETE", body: unknown) {
     setMessage("");
     const response = await fetch("/api/internal/expenses", {
@@ -325,6 +342,7 @@ export function FinanceExpensePanel({
     router.refresh();
   }
 
+  /** Reenvia os dados da linha para aprovar como PAID ou cancelar; a aprovacao usa hoje em UTC como paidAt. */
   async function reviewExpense(expense: ExpenseItem, status: "PAID" | "CANCELED") {
     await requestExpense("PATCH", {
       expenseId: expense.id,

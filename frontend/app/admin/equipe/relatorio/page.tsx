@@ -332,7 +332,8 @@ export default async function BarberReportPage({ searchParams }: PageProps) {
             <div className="mt-4 grid gap-3 text-sm text-white/70 md:grid-cols-2">
               <p>Servicos pelo site: 50% = <strong className="text-primary">{formatCurrency(report.summary.siteCommission)}</strong></p>
               <p>Avulsos: 50% = <strong className="text-primary">{formatCurrency(report.summary.manualCommission)}</strong></p>
-              <p>Assinaturas: pool 40% {formatCurrency(report.summary.subscriptionPool)} ({report.summary.subscriptionBarberAppointments}/{report.summary.subscriptionTotalAppointments}) = <strong className="text-primary">{formatCurrency(report.summary.subscriptionCommission)}</strong></p>
+              <p>Assinaturas: pool 40% {formatCurrency(report.summary.subscriptionPool)} ({report.summary.subscriptionBarberAppointments}/{report.summary.subscriptionTotalAppointments}) = estimativa <strong className="text-primary">{formatCurrency(report.summary.subscriptionEstimatedCommission)}</strong></p>
+              <p>Repasse de assinaturas pago no periodo = <strong className="text-primary">{formatCurrency(report.summary.subscriptionCommission)}</strong></p>
               <p>Vendas elegiveis: 20% do lucro = <strong className="text-primary">{formatCurrency(report.summary.salesCommission)}</strong></p>
               <p>Vendas internas: sem comissao, faturamento {formatCurrency(report.summary.salesWithoutCommissionGross)}</p>
               <p className="font-black uppercase text-primary">Total: {formatCurrency(report.summary.totalCommission)}</p>

@@ -19,6 +19,11 @@ const profileSchema = z.object({
   })
 });
 
+/**
+ * Mantem CPF/nascimento no JSON de notes junto das demais chaves que puderem ser lidas.
+ * Texto legado nao JSON e descartado no fallback; campos vazios viram null.
+ * Nascimento permanece texto, sem conversao de fuso nem validacao de data civil aqui.
+ */
 function buildClientNotes(current: string | null, data: { cpf?: string; birthDate?: string }) {
   let parsed: Record<string, unknown> = {};
 
@@ -35,6 +40,11 @@ function buildClientNotes(current: string | null, data: { cpf?: string; birthDat
   });
 }
 
+/**
+ * Atualiza apenas o perfil do CLIENT autenticado, com limites textuais definidos no schema.
+ * User, notes e endereco completo sao persistidos na mesma transacao, sem efeitos financeiros.
+ * Endereco incompleto nao limpa o existente; o endereco selecionado pela sessao e reutilizado.
+ */
 export async function PATCH(request: Request) {
   try {
     const session = await getAuthenticatedClient();

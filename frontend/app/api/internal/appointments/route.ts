@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/server/audit";
-import { SERVICE_COMMISSION_PERCENT, hasActiveSubscriptionAt } from "@/lib/server/finance-rules";
+import { SERVICE_COMMISSION_PERCENT, appointmentFinancials } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 const requestSchema = z.object({
@@ -17,6 +18,53 @@ const statusByAction = {
   finish: "COMPLETED"
 } as const;
 
+const internalAppointmentSelect = {
+  id: true,
+  status: true,
+  barberId: true,
+  observacoes: true,
+  dataHora: true,
+  service: { select: { id: true, name: true, price: true } },
+  services: { select: { serviceId: true, price: true, service: { select: { name: true } } } },
+  barber: { select: { user: { select: { name: true } } } },
+  client: {
+    select: {
+      subscriptions: {
+        select: {
+          active: true,
+          status: true,
+          deletedAt: true,
+          startDate: true,
+          endDate: true,
+          subscriptionPlan: { select: { name: true, services: { select: { serviceId: true } } } }
+        }
+      }
+    }
+  }
+} as const;
+
+async function canStoreAppointmentFinancialSnapshot(tx: Prisma.TransactionClient) {
+  try {
+    const rows = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'appointments'
+          AND column_name = 'financialSnapshot'
+      ) AS "exists"
+    `;
+    return Boolean(rows[0]?.exists);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fluxo interno de aprovacao/finalizacao de agendamentos.
+ * Pendente/recusado/cancelado nao gera receita; a receita e a comissao nascem
+ * somente ao finalizar um atendimento nao coberto por assinatura.
+ */
 export async function PATCH(request: Request) {
   try {
     const session = await getAuthenticatedUser();
@@ -36,12 +84,7 @@ export async function PATCH(request: Request) {
         id: payload.data.appointmentId,
         deletedAt: null
       },
-      include: {
-        service: true,
-        services: { include: { service: true } },
-        barber: { include: { user: true } },
-        client: { include: { subscriptions: true } }
-      }
+      select: internalAppointmentSelect
     });
 
     if (!appointment) {
@@ -60,7 +103,28 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: "Este agendamento precisa estar confirmado." }, { status: 409 });
     }
 
-    const updated = await prisma.appointment.update({
+    const updated = payload.data.action === "finish" ? await prisma.$transaction(async (tx) => {
+      // A transicao condicional e os efeitos financeiros confirmam ou revertem juntos.
+      const financials = appointmentFinancials(appointment);
+      const canStoreSnapshot = await canStoreAppointmentFinancialSnapshot(tx);
+      const locked = await tx.appointment.updateMany({
+        where: { id: appointment.id, status: "CONFIRMED", deletedAt: null },
+        data: canStoreSnapshot ? { status: "COMPLETED", financialSnapshot: financials.snapshot } : { status: "COMPLETED" }
+      });
+      if (locked.count !== 1) throw new Error("Este agendamento ja foi processado.");
+      if (financials.chargedGross > 0) {
+        const existingCommission = await tx.employeeCommission.findFirst({ where: { appointmentId: appointment.id, barberId: appointment.barberId } });
+        if (!existingCommission) await tx.employeeCommission.create({
+          data: { barberId: appointment.barberId, appointmentId: appointment.id, percentage: SERVICE_COMMISSION_PERCENT.toFixed(2), amount: financials.commission }
+        });
+        await tx.financialTransaction.create({
+          data: { type: "INCOME", amount: financials.chargedGross, description: `Atendimento finalizado: ${appointment.id} - ${financials.extra.map((item) => item.name).join(" + ")}` }
+        });
+      }
+      return canStoreSnapshot
+        ? { ...appointment, status: "COMPLETED" as const, financialSnapshot: financials.snapshot }
+        : { ...appointment, status: "COMPLETED" as const };
+    }) : await prisma.appointment.update({
       where: { id: appointment.id },
       data: {
         status: statusByAction[payload.data.action],
@@ -70,40 +134,9 @@ export async function PATCH(request: Request) {
               ? `${appointment.observacoes}\nRecusado pela barbearia.`
               : "Recusado pela barbearia."
             : appointment.observacoes
-      }
+      },
+      select: { id: true, status: true }
     });
-
-    if (payload.data.action === "finish") {
-      const appointmentServices = appointment.services.length
-        ? appointment.services
-        : [{ service: appointment.service, price: appointment.service.price }];
-      const appointmentTotal = appointmentServices.reduce((sum, item) => sum + Number(item.price), 0);
-      const serviceNames = appointmentServices.map((item) => item.service.name).join(" + ");
-      const isSubscriptionAppointment = hasActiveSubscriptionAt(appointment.client.subscriptions, appointment.dataHora);
-      const commissionValue = appointmentTotal * (SERVICE_COMMISSION_PERCENT / 100);
-      const existingCommission = await prisma.employeeCommission.findFirst({
-        where: { appointmentId: appointment.id, barberId: appointment.barberId }
-      });
-
-      if (!isSubscriptionAppointment && !existingCommission) {
-        await prisma.employeeCommission.create({
-          data: {
-            barberId: appointment.barberId,
-            appointmentId: appointment.id,
-            percentage: SERVICE_COMMISSION_PERCENT.toFixed(2),
-            amount: commissionValue
-          }
-        }).catch(() => null);
-      }
-
-      if (!isSubscriptionAppointment) await prisma.financialTransaction.create({
-        data: {
-          type: "INCOME",
-          amount: appointmentTotal,
-          description: `Atendimento finalizado: ${appointment.id} - ${serviceNames}`
-        }
-      }).catch(() => null);
-    }
 
     await createAuditLog({
       userId: session.user.id,

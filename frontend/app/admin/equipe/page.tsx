@@ -3,7 +3,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { BarChart3, FileText, Scissors, Users } from "lucide-react";
+import { BarChart3, FileText, Scissors, Users, Wallet } from "lucide-react";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +11,11 @@ import { getBarberFinancialSummary } from "@/lib/server/barber-report";
 import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
+/*
+ * Visao administrativa da equipe.
+ * Diferente da home do barbeiro, esta tela percorre todos os profissionais para
+ * Renato comparar periodos sem mudar a regra de permissao das telas individuais.
+ */
 export default async function AdminTeamPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/admin/equipe");
@@ -32,6 +37,7 @@ export default async function AdminTeamPage() {
   const summaries = new Map<string, Awaited<ReturnType<typeof getBarberFinancialSummary>>>();
   for (const barber of barbers) {
     for (const range of ranges) {
+      // Usa o mesmo motor de relatorio do barbeiro para evitar divergencia entre telas.
       summaries.set(`${barber.id}:${range.period}`, await getBarberFinancialSummary({ barberId: barber.id, period: range.period }));
     }
   }
@@ -47,6 +53,23 @@ export default async function AdminTeamPage() {
           role={session.user.role}
           hasBarber={Boolean(session.user.barber?.id)}
         />
+
+        <section className="mt-8 rounded-[12px] border border-primary/20 bg-card p-5 shadow-panel">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-primary">Assinaturas</p>
+              <h2 className="text-2xl font-black uppercase">Pagamentos mensais de repasses</h2>
+              <p className="mt-1 text-sm text-white/55">Fechamento mensal do pool de 40% para os barbeiros, separado das comissoes semanais.</p>
+            </div>
+            <Link
+              href="/admin/equipe/repasses"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[10px] border border-primary/60 px-5 text-sm font-black uppercase text-primary transition hover:bg-primary hover:text-black"
+            >
+              <Wallet className="h-4 w-4" />
+              Repasses de assinaturas
+            </Link>
+          </div>
+        </section>
 
         <div className="mt-8 grid gap-5">
           {barbers.length === 0 ? <p className="rounded-[12px] border border-primary/20 bg-card p-6 text-white/65">Nenhum barbeiro ativo.</p> : null}

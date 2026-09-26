@@ -19,6 +19,15 @@ function servicesTotal(appointment: { service: { price: unknown }; services: { p
   return appointment.services.length ? appointment.services.reduce((sum, item) => sum + Number(item.price), 0) : Number(appointment.service.price);
 }
 
+const appointmentHistorySelect = {
+  id: true,
+  status: true,
+  dataHora: true,
+  client: { select: { user: { select: { name: true } } } },
+  service: { select: { name: true, duration: true, price: true } },
+  services: { select: { duration: true, price: true, service: { select: { name: true } } } }
+} as const;
+
 export default async function BarberHistoryPage() {
   const session = await getAuthenticatedUser();
   if (!session) redirect("/login?redirectTo=/funcionario/historico");
@@ -35,7 +44,7 @@ export default async function BarberHistoryPage() {
       dataHora: { gte: since },
       status: { in: ["REJECTED", "CANCELED", "COMPLETED", "NO_SHOW"] }
     },
-    include: { client: { include: { user: true } }, barber: { include: { user: true } }, service: true, services: { include: { service: true } } },
+    select: appointmentHistorySelect,
     orderBy: { dataHora: "desc" }
   });
 
