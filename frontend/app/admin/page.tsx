@@ -6,8 +6,9 @@ import { redirect } from "next/navigation";
 import { AlertTriangle, BarChart3, CalendarDays, Crown, Package, Settings, ShieldAlert, Users } from "lucide-react";
 import { AdminModuleNav } from "@/components/internal/admin-module-nav";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDatePtBr, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { endOfSaoPauloDay, resolvePeriodRange, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { getFinanceMetrics } from "@/lib/server/finance-rules";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
@@ -33,13 +34,12 @@ export default async function AdminPanelPage() {
     redirect(session.user.role === "BARBER" ? "/funcionario" : "/cliente");
   }
 
-  const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(todayStart);
-  todayEnd.setDate(todayEnd.getDate() + 1);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const today = todayDateInput();
+  const todayStart = startOfSaoPauloDay(today);
+  const todayEnd = endOfSaoPauloDay(today);
+  const month = resolvePeriodRange({ period: "month" });
+  const monthStart = month.start;
+  const monthEnd = month.end;
   const dueSoonEnd = new Date(todayStart);
   dueSoonEnd.setDate(dueSoonEnd.getDate() + 7);
 
@@ -55,7 +55,7 @@ export default async function AdminPanelPage() {
     lowStockProducts,
     operationalAppointments
   ] = await Promise.all([
-    prisma.appointment.count({ where: { dataHora: { gte: todayStart, lt: todayEnd }, deletedAt: null } }),
+    prisma.appointment.count({ where: { dataHora: { gte: todayStart, lte: todayEnd }, deletedAt: null } }),
     prisma.sale.count({ where: { status: "OPEN", deletedAt: null } }),
     prisma.subscription.count({ where: { status: "ACTIVE", deletedAt: null } }),
     prisma.subscription.count({ where: { status: "PENDING", deletedAt: null } }),
@@ -145,8 +145,8 @@ export default async function AdminPanelPage() {
                       <p className="mt-1 text-sm text-white/60">{appointmentServicesLabel(appointment)} com {appointment.barber.user.name}</p>
                     </div>
                     <div className="text-sm text-white/65 md:text-right">
-                      <p>{appointment.dataHora.toLocaleDateString("pt-BR")}</p>
-                      <p className="font-black text-primary">{appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                      <p>{formatDatePtBr(appointment.dataHora)}</p>
+                      <p className="font-black text-primary">{formatTimePtBr(appointment.dataHora)}</p>
                       <p className="mt-1 uppercase">{appointment.status}</p>
                     </div>
                   </div>

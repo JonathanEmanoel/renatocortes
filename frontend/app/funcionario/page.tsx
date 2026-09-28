@@ -17,7 +17,7 @@ import {
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
 import { BarberPanelActionTabs } from "@/components/internal/barber-panel-action-tabs";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getBarberDailySeries, getBarberReport, reportTypeOptions } from "@/lib/server/barber-report";
 import { endOfSaoPauloDay, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
@@ -382,7 +382,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                   <p className="mt-1 text-sm text-white/65">{appointmentServicesLabel(nextAppointment)}</p>
                   <p className="mt-3 inline-flex items-center gap-2 font-black text-primary">
                     <Clock className="h-4 w-4" />
-                    {nextAppointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    {formatTimePtBr(nextAppointment.dataHora)}
                   </p>
                   <p className="mt-1 text-sm uppercase text-white/55">{statusLabel(nextAppointment.status)}</p>
                   {nextAppointment.client.subscriptions.length > 0 ? (
@@ -409,7 +409,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                       <p className="mt-1 text-sm text-white/60">{appointmentServicesLabel(appointment)}</p>
                     </div>
                     <div className="text-sm text-white/65 sm:text-right">
-                      <p className="font-black text-primary">{appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                      <p className="font-black text-primary">{formatTimePtBr(appointment.dataHora)}</p>
                       <p className="mt-1 uppercase">{statusLabel(appointment.status)}</p>
                     </div>
                   </div>

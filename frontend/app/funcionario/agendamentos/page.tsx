@@ -6,8 +6,9 @@ import Link from "next/link";
 import { CalendarDays, Filter, RotateCcw, Search, Scissors } from "lucide-react";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDatePtBr, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { addDaysInput, endOfSaoPauloDay, resolvePeriodRange, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 type PageProps = {
@@ -32,58 +33,32 @@ const validStatuses = ["PENDING", "CONFIRMED", "COMPLETED", "CANCELED", "REJECTE
 const operationalStatuses = ["PENDING", "CONFIRMED"] as const;
 const historyStatuses = ["COMPLETED", "CANCELED", "REJECTED", "NO_SHOW"] as const;
 
-function dayStart(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function dayEnd(date: Date) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
-}
-
-function startOfWeek(date: Date) {
-  const next = dayStart(date);
-  const day = next.getDay() || 7;
-  next.setDate(next.getDate() - day + 1);
-  return next;
-}
-
 function resolveActionPeriod(period?: string, date?: string) {
-  const now = new Date();
+  const today = todayDateInput();
   if (date) {
-    const selected = new Date(`${date}T00:00:00`);
-    return { start: dayStart(selected), end: dayEnd(selected), label: selected.toLocaleDateString("pt-BR") };
+    return { start: startOfSaoPauloDay(date), end: endOfSaoPauloDay(date), label: formatDatePtBr(startOfSaoPauloDay(date)) };
   }
   if (!period || period === "next30") {
-    const end = new Date(now);
-    end.setDate(end.getDate() + 30);
-    return { start: dayStart(now), end: dayEnd(end), label: "Proximos 30 dias" };
+    return { start: startOfSaoPauloDay(today), end: endOfSaoPauloDay(addDaysInput(today, 30)), label: "Proximos 30 dias" };
   }
-  if (period === "today") return { start: dayStart(now), end: dayEnd(now), label: "Hoje" };
+  if (period === "today") return { start: startOfSaoPauloDay(today), end: endOfSaoPauloDay(today), label: "Hoje" };
   if (period === "week") {
-    const start = startOfWeek(now);
-    const end = dayEnd(new Date(start));
-    end.setDate(start.getDate() + 6);
-    return { start, end, label: "Semana atual" };
+    const range = resolvePeriodRange({ period: "week" });
+    return { start: range.start, end: range.end, label: "Semana atual" };
   }
-  if (period === "month") return { start: dayStart(new Date(now.getFullYear(), now.getMonth(), 1)), end: dayEnd(new Date(now.getFullYear(), now.getMonth() + 1, 0)), label: "Mes atual" };
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  return { start: dayStart(start), end: dayEnd(now), label: "Ultimos 30 dias" };
+  if (period === "month") {
+    const range = resolvePeriodRange({ period: "month" });
+    return { start: range.start, end: range.end, label: "Mes atual" };
+  }
+  return { start: startOfSaoPauloDay(addDaysInput(today, -30)), end: endOfSaoPauloDay(today), label: "Ultimos 30 dias" };
 }
 
 function resolveHistoryPeriod(date?: string) {
-  const now = new Date();
+  const today = todayDateInput();
   if (date) {
-    const selected = new Date(`${date}T00:00:00`);
-    return { start: dayStart(selected), end: dayEnd(selected), label: selected.toLocaleDateString("pt-BR") };
+    return { start: startOfSaoPauloDay(date), end: endOfSaoPauloDay(date), label: formatDatePtBr(startOfSaoPauloDay(date)) };
   }
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  return { start: dayStart(start), end: dayEnd(now), label: "Ultimos 30 dias" };
+  return { start: startOfSaoPauloDay(addDaysInput(today, -30)), end: endOfSaoPauloDay(today), label: "Ultimos 30 dias" };
 }
 
 function servicesLabel(appointment: { service: { name: string }; services: { service: { name: string } }[] }) {
@@ -276,8 +251,8 @@ export default async function BarberAppointmentsPage({ searchParams }: PageProps
                     ) : null}
                   </div>
                   <div className="text-sm text-white/65 md:text-right">
-                    <p>{appointment.dataHora.toLocaleDateString("pt-BR")}</p>
-                    <p className="font-black text-primary">{appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                    <p>{formatDatePtBr(appointment.dataHora)}</p>
+                    <p className="font-black text-primary">{formatTimePtBr(appointment.dataHora)}</p>
                     <p className="mt-1 uppercase">{statusLabels[appointment.status] ?? appointment.status}</p>
                   </div>
                 </div>
@@ -311,7 +286,7 @@ export default async function BarberAppointmentsPage({ searchParams }: PageProps
                   <p className="font-black text-primary">{formatCurrency(servicesTotal(appointment))}</p>
                 </div>
                 <div className="md:text-right">
-                  <p>{appointment.dataHora.toLocaleDateString("pt-BR")} {appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                  <p>{formatDatePtBr(appointment.dataHora)} {formatTimePtBr(appointment.dataHora)}</p>
                   <p className="font-black uppercase text-primary">{statusLabels[appointment.status] ?? appointment.status}</p>
                 </div>
               </article>

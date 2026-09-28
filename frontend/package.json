@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/assert-local-development-database.mjs",
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "postinstall": "prisma generate",
     "prebuild": "prisma generate",
@@ -13,13 +14,17 @@
     "test:finance": "node tests/finance-regression.mjs",
     "test:scheduling": "node tests/scheduling-regression.mjs",
     "test:auth": "node tests/auth-resilience.mjs",
-    "test:postgres-integration": "tsx tests/postgres-integration.ts",
+    "pretest:postgres-integration": "npm run test:db-safety",
+    "test:postgres-integration": "tsx --env-file=.env.local tests/postgres-integration.ts",
     "test:db-safety": "node scripts/assert-test-database.mjs",
     "audit:production:readonly": "node scripts/audit-production-readonly.mjs",
     "audit:db-connectivity": "node scripts/audit-db-connectivity.mjs",
     "prisma:generate": "prisma generate",
+    "preprisma:migrate": "node scripts/assert-local-development-database.mjs",
     "prisma:migrate": "prisma migrate dev",
+    "preprisma:studio": "node scripts/assert-local-development-database.mjs",
     "prisma:studio": "prisma studio",
+    "preprisma:seed": "node scripts/assert-local-development-database.mjs",
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {

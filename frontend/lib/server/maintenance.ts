@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { formatDatePtBr, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { SERVICE_COMMISSION_PERCENT, SUBSCRIPTION_BARBER_PERCENT, appointmentFinancials, productItemsCommission } from "@/lib/server/finance-rules";
 import { assertExpenseNotLinkedToPayout } from "@/lib/server/expense-protection";
@@ -316,7 +317,7 @@ async function appointmentRows(filters: MaintenanceFilters, range?: { gte?: Date
         title: appointment.client.user.name,
         subtitle: `${serviceNames(appointment)} com ${appointment.barber.user.name}`,
         meta: [
-          `Data: ${appointment.dataHora.toLocaleString("pt-BR")}`,
+          `Data: ${formatDatePtBr(appointment.dataHora)} ${formatTimePtBr(appointment.dataHora)}`,
           `Status: ${appointment.status}`,
           `Valor: ${money(amount)}`,
           `Comissoes vinculadas: ${appointment.commissions.length}`

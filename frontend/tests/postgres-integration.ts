@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { calculateSubscriptionPayouts, paySubscriptionPayout } from "@/lib/server/subscription-payouts";
 import { lockBarberSchedule, validateAvailability } from "@/lib/server/appointment-availability";
+import { formatTimePtBr } from "@/lib/format";
 
 const expectedDatabase = "renato_cortes_test";
 const testUrl = process.env.TEST_DATABASE_URL;
@@ -91,7 +92,7 @@ async function main() {
         barberId: admin.barber.id,
         weekDay: weekDay(bookingDate),
         startTime: "09:00",
-        endTime: "13:00"
+        endTime: "18:00"
       }
     });
 
@@ -125,7 +126,11 @@ async function main() {
       where: { barberId: admin.barber.id, dataHora: new Date(`${bookingDate}T10:00:00-03:00`) }
     }), 1);
     await reserve("11:00");
-    assert.equal(await prisma.appointment.count({ where: { barberId: admin.barber.id } }), 2);
+    const persistedAtSixteen = await reserve("16:00");
+    const reloadedAtSixteen = await prisma.appointment.findUniqueOrThrow({ where: { id: persistedAtSixteen.id } });
+    assert.equal(reloadedAtSixteen.dataHora.toISOString(), `${bookingDate}T19:00:00.000Z`);
+    assert.equal(formatTimePtBr(reloadedAtSixteen.dataHora), "16:00");
+    assert.equal(await prisma.appointment.count({ where: { barberId: admin.barber.id } }), 3);
 
     const plan = await prisma.subscriptionPlan.create({
       data: {

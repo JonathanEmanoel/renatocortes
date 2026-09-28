@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node ../frontend/scripts/assert-local-development-database.mjs",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
+    "preprisma:migrate": "node ../frontend/scripts/assert-local-development-database.mjs",
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {

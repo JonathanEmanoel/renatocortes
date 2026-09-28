@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDatePtBr, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import {
   PRODUCT_PROFIT_COMMISSION_PERCENT,
@@ -251,11 +251,11 @@ function shortId(prefix: string, id: string) {
 }
 
 function dateText(date: Date) {
-  return date.toLocaleDateString("pt-BR");
+  return formatDatePtBr(date);
 }
 
 function timeText(date: Date) {
-  return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return formatTimePtBr(date);
 }
 
 function statusText(status: string) {

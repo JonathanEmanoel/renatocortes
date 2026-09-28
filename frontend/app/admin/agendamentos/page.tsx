@@ -4,9 +4,10 @@ export const revalidate = 0;
 import { redirect } from "next/navigation";
 import { AppointmentActionButtons } from "@/components/internal/appointment-action-buttons";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDatePtBr, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getDashboardPath } from "@/lib/auth-routes";
+import { endOfSaoPauloDay, startOfSaoPauloDay } from "@/lib/server/date-periods";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
 function servicesLabel(appointment: { service: { name: string }; services: { service: { name: string } }[] }) {
@@ -50,8 +51,8 @@ export default async function AdminAppointmentsPage({ searchParams }: AdminAppoi
 
   const since = new Date();
   since.setDate(since.getDate() - 30);
-  const dayStart = filters.date ? new Date(`${filters.date}T00:00:00`) : null;
-  const dayEnd = filters.date ? new Date(`${filters.date}T23:59:59`) : null;
+  const dayStart = filters.date ? startOfSaoPauloDay(filters.date) : null;
+  const dayEnd = filters.date ? endOfSaoPauloDay(filters.date) : null;
   const barberFilter = filters.barberId && filters.barberId !== "ALL" ? filters.barberId : undefined;
   const operationalStatusFilter = operationalStatuses.find((status) => status === filters.status);
   const historyStatusFilter = historyStatuses.find((status) => status === filters.status);
@@ -126,8 +127,8 @@ export default async function AdminAppointmentsPage({ searchParams }: AdminAppoi
                     <p className="mt-1 text-sm text-white/60">{servicesLabel(appointment)} com {appointment.barber.user.name}</p>
                   </div>
                   <div className="text-sm text-white/65 md:text-right">
-                    <p>{appointment.dataHora.toLocaleDateString("pt-BR")}</p>
-                    <p className="font-black text-primary">{appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                    <p>{formatDatePtBr(appointment.dataHora)}</p>
+                    <p className="font-black text-primary">{formatTimePtBr(appointment.dataHora)}</p>
                     <p className="mt-1 uppercase">{appointment.status}</p>
                   </div>
                 </div>
@@ -157,7 +158,7 @@ export default async function AdminAppointmentsPage({ searchParams }: AdminAppoi
                   <p className="text-sm text-white/55">{servicesDuration(appointment)} min - {formatCurrency(servicesTotal(appointment))}</p>
                 </div>
                 <div className="md:text-right">
-                  <p>{appointment.dataHora.toLocaleDateString("pt-BR")} {appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                  <p>{formatDatePtBr(appointment.dataHora)} {formatTimePtBr(appointment.dataHora)}</p>
                   <p className="font-black uppercase text-primary">{appointment.status}</p>
                 </div>
               </article>

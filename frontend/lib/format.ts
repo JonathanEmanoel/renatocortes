@@ -5,26 +5,31 @@ export function formatCurrency(value: number | string) {
   }).format(Number(value));
 }
 
-/** Formata no timezone do ambiente; nao converte para o calendario de Sao Paulo. */
+export const OPERATIONAL_TIME_ZONE = "America/Sao_Paulo";
+
+/** Formata datas operacionais sempre no calendario da barbearia. */
 export function formatDatePtBr(date: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: OPERATIONAL_TIME_ZONE,
     day: "2-digit",
     month: "short",
     year: "numeric"
   }).format(date);
 }
 
-/** Versao sem ano, preservando o timezone do ambiente de renderizacao. */
+/** Versao sem ano no calendario da barbearia. */
 export function formatShortDatePtBr(date: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: OPERATIONAL_TIME_ZONE,
     day: "2-digit",
     month: "short"
   }).format(date);
 }
 
-/** Hora de exibicao em 24h no timezone do ambiente, sem alterar o instante recebido. */
+/** Hora operacional em 24h, independente do timezone do servidor. */
 export function formatTimePtBr(date: Date) {
   return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: OPERATIONAL_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false

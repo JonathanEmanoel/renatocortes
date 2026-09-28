@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { ManualServiceChangeActions } from "@/components/internal/manual-service-change-actions";
 import { ManualServiceForm } from "@/components/internal/manual-service-form";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDatePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getDashboardPath } from "@/lib/auth-routes";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
@@ -72,7 +72,7 @@ export default async function AdminManualServicesPage() {
                         {request.manualService.customerName ?? request.manualService.client?.user.name ?? "Cliente nao informado"}
                       </h3>
                       <p className="mt-1 text-sm text-white/55">
-                        {request.manualService.barber.user.name} - {request.manualService.serviceDate.toLocaleDateString("pt-BR")} - {request.manualService.items.map((item) => `${item.service.name}${item.quantity > 1 ? ` x${item.quantity}` : ""}`).join(" + ")}
+                        {request.manualService.barber.user.name} - {formatDatePtBr(request.manualService.serviceDate)} - {request.manualService.items.map((item) => `${item.service.name}${item.quantity > 1 ? ` x${item.quantity}` : ""}`).join(" + ")}
                       </p>
                       <p className="mt-2 text-sm text-white/60">
                         Solicitado por {request.requestedBy?.name ?? "usuario nao informado"} em {request.createdAt.toLocaleString("pt-BR")}.

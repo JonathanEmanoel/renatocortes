@@ -3,7 +3,7 @@ export const revalidate = 0;
 
 import { redirect } from "next/navigation";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDatePtBr, formatTimePtBr } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 
@@ -80,7 +80,7 @@ export default async function BarberHistoryPage() {
                   <p className="font-black text-primary">{formatCurrency(servicesTotal(appointment))}</p>
                 </div>
                 <div className="md:text-right">
-                  <p>{appointment.dataHora.toLocaleDateString("pt-BR")} {appointment.dataHora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</p>
+                  <p>{formatDatePtBr(appointment.dataHora)} {formatTimePtBr(appointment.dataHora)}</p>
                   <p className="font-black uppercase text-primary">{appointment.status}</p>
                 </div>
               </article>

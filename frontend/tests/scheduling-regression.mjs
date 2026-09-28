@@ -50,6 +50,7 @@ function load(relative) {
   return loaded.exports;
 }
 const rule = load('lib/client-scheduling.ts');
+const format = load('lib/format.ts');
 const api = load('app/api/appointments/route.ts');
 const results = [];
 function reset(time = '09:00') {
@@ -109,6 +110,24 @@ await check('Conflito no turno permitido e intervalo adjacente', async () => {
   busy = [{ dataHora: new RealDate('2026-09-16T15:00:00-03:00'), service: { duration: 60 }, services: [] }];
   assert.ok(!(await slots()).body.times.includes('15:00')); assert.equal((await post('15:00')).status, 409);
   assert.equal((await post('14:00')).status, 200); assert.equal((await post('16:00')).status, 200);
+});
+await check('16h atravessa API como 19Z e volta a ser exibido como 16h', async () => {
+  const response = await post('16:00');
+  assert.equal(response.status, 200);
+  const stored = busy.at(-1).dataHora;
+  assert.equal(stored.toISOString(), '2026-09-16T19:00:00.000Z');
+  assert.equal(format.formatTimePtBr(stored), '16:00');
+});
+await check('09h, 12h, 16h e 18h preservam o horario operacional', () => {
+  for (const time of ['09:00', '12:00', '16:00', '18:00']) {
+    const instant = new RealDate(`2026-09-17T${time}:00-03:00`);
+    assert.equal(format.formatTimePtBr(instant), time);
+  }
+});
+await check('19h sem disponibilidade e rejeitado', async () => {
+  reset('14:00'); windows = [{ startTime: '09:00', endTime: '19:00' }];
+  assert.ok(!(await slots()).body.times.includes('19:00'));
+  assert.equal((await post('19:00')).status, 409);
 });
 await check('Duas criacoes simultaneas para o mesmo horario geram uma unica reserva', async () => {
   const outcomes = await Promise.all([post('15:00'), post('15:00')]);

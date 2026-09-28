@@ -96,49 +96,62 @@ async function resolveDbSession(user: Awaited<ReturnType<ReturnType<typeof creat
   });
 
   if (!dbUser) {
-    dbUser = await prisma.$transaction(async (tx) => {
-      const createdUser = await tx.user.create({
-        data: {
-          authId: user.id,
-          name: internalProfile?.name ?? user.user_metadata?.name ?? user.email!.split("@")[0],
-          email,
-          phone: internalProfile?.phone ?? (typeof user.user_metadata?.phone === "string" ? user.user_metadata.phone : undefined),
-          role: internalProfile?.role ?? "CLIENT"
-        },
-        include: {
-          barber: true,
-          client: true
-        }
-      });
-
-      if (internalProfile?.role === "BARBER" || internalProfile?.role === "ADMIN") {
-        // Barbeiros/admins precisam do registro Barber para acessar paines operacionais.
-        await tx.barber.create({
+    try {
+      dbUser = await prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
           data: {
-            userId: createdUser.id,
-            specialty: internalProfile.barberSpecialty ?? "Barbeiro Renato Cortes",
-            serviceCommissionPercent: "50.00",
-            productCommissionPercent: "20.00"
+            authId: user.id,
+            name: internalProfile?.name ?? user.user_metadata?.name ?? user.email!.split("@")[0],
+            email,
+            phone: internalProfile?.phone ?? (typeof user.user_metadata?.phone === "string" ? user.user_metadata.phone : undefined),
+            role: internalProfile?.role ?? "CLIENT"
+          },
+          include: {
+            barber: true,
+            client: true
           }
         });
-      }
 
-      if (!internalProfile) {
-        await tx.client.create({
-          data: {
-            userId: createdUser.id
+        if (internalProfile?.role === "BARBER" || internalProfile?.role === "ADMIN") {
+          // Barbeiros/admins precisam do registro Barber para acessar paines operacionais.
+          await tx.barber.create({
+            data: {
+              userId: createdUser.id,
+              specialty: internalProfile.barberSpecialty ?? "Barbeiro Renato Cortes",
+              serviceCommissionPercent: "50.00",
+              productCommissionPercent: "20.00"
+            }
+          });
+        }
+
+        if (!internalProfile) {
+          await tx.client.create({
+            data: {
+              userId: createdUser.id
+            }
+          });
+        }
+
+        return tx.user.findUniqueOrThrow({
+          where: { id: createdUser.id },
+          include: {
+            barber: true,
+            client: true
           }
         });
-      }
-
-      return tx.user.findUniqueOrThrow({
-        where: { id: createdUser.id },
-        include: {
-          barber: true,
-          client: true
-        }
       });
-    });
+    } catch (error) {
+      // Requisicoes paralelas podem sincronizar a mesma sessao na primeira carga.
+      // A vencedora cria o perfil; a outra reutiliza o registro ja confirmado.
+      if (!(error && typeof error === "object" && "code" in error && error.code === "P2002")) throw error;
+      dbUser = await prisma.user.findFirst({
+        where: internalProfile
+          ? { OR: [{ authId: user.id }, { email }], deletedAt: null }
+          : { authId: user.id, deletedAt: null },
+        include: { barber: true, client: true }
+      });
+      if (!dbUser) throw error;
+    }
   } else if (
     dbUser.authId !== user.id ||
     (internalProfile &&
