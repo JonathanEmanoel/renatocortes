@@ -24,6 +24,8 @@ import { endOfSaoPauloDay, startOfSaoPauloDay, todayDateInput } from "@/lib/serv
 import { getAuthenticatedUser } from "@/lib/server/internal-auth";
 import { activeSubscribersForManualService } from "@/lib/server/manual-services";
 import { cn } from "@/utils/cn";
+import { getOwnSubscriptionEstimate } from "@/lib/server/barber-subscription-estimate";
+import { BarberSubscriptionEstimateCard } from "@/components/internal/barber-subscription-estimate-card";
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -140,6 +142,7 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
 
   // getBarberReport limita os dados ao barbeiro logado e consolida site, avulsos, assinantes e vendas.
   const report = await getBarberReport(reportFilters);
+  const subscriptionEstimate = await getOwnSubscriptionEstimate();
   const [
     todayAppointments,
     availabilityDays,
@@ -330,13 +333,6 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                 detail: "50% dos atendimentos registrados manualmente por voce."
               },
               {
-                label: "Assinantes",
-                count: report.summary.subscriptionBarberAppointments,
-                produced: report.summary.subscriptionRevenue,
-                commission: report.summary.subscriptionCommission,
-                detail: `${report.summary.subscriptionBarberAppointments}/${report.summary.subscriptionTotalAppointments} atendimentos no pool. Estimativa mensal: ${formatCurrency(report.summary.subscriptionEstimatedCommission)}.`
-              },
-              {
                 label: "Produtos com comissao",
                 count: salesWithCommission.length,
                 produced: report.summary.salesWithCommissionGross,
@@ -350,14 +346,17 @@ export default async function BarberPanelPage({ searchParams }: PageProps) {
                 commission: 0,
                 detail: "Produtos somente presenciais: venda registrada, comissao R$0,00."
               }
-            ].map((item) => (
-              <article key={item.label} className="rounded-[12px] border border-white/10 bg-black/30 p-4">
+            ].map((item, index) => (
+              <div key={item.label} className="contents">
+              {index === 2 ? <BarberSubscriptionEstimateCard estimate={subscriptionEstimate} /> : null}
+              <article className="rounded-[12px] border border-white/10 bg-black/30 p-4">
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-white/50">{item.label}</p>
                 <strong className="mt-3 block text-lg text-white">{item.count} registro(s)</strong>
                 <p className="mt-3 text-sm text-white/60">Produzido: <span className="font-black text-white">{formatCurrency(item.produced)}</span></p>
                 <p className="text-sm text-white/60">Comissao: <span className="font-black text-primary">{formatCurrency(item.commission)}</span></p>
                 <p className="mt-3 text-xs leading-relaxed text-white/45">{item.detail}</p>
               </article>
+              </div>
             ))}
           </div>
 

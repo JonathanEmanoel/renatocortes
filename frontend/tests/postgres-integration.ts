@@ -4,6 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { calculateSubscriptionPayouts, paySubscriptionPayout } from "@/lib/server/subscription-payouts";
 import { lockBarberSchedule, validateAvailability } from "@/lib/server/appointment-availability";
 import { formatTimePtBr } from "@/lib/format";
+import { projectBarberSubscriptionEstimate } from "@/lib/server/barber-subscription-estimate";
+import { getFinanceMetrics } from "@/lib/server/finance-rules";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { BarberSubscriptionEstimateCard } from "@/components/internal/barber-subscription-estimate-card";
 
 const expectedDatabase = "renato_cortes_test";
 const testUrl = process.env.TEST_DATABASE_URL;
@@ -300,6 +308,63 @@ async function main() {
     const inactiveHistory = await calculateSubscriptionPayouts("2026-09");
     assert.ok(inactiveHistory.rows.some((row) => row.barberId === admin.barber!.id && row.status === "PAID"));
 
+    const estimatePlan = await prisma.subscriptionPlan.create({data:{name:`Estimativa ${suffix}`,value:1000,periodDays:30,services:{create:[{serviceId:coveredA.id},{serviceId:coveredB.id}]}}});
+    const estimateSubscription = await prisma.subscription.create({data:{clientId:clientUser.client.id,subscriptionPlanId:estimatePlan.id,startDate:new Date('2026-10-01T00:00:00-03:00'),endDate:new Date('2026-10-31T23:59:59-03:00'),active:true,status:'ACTIVE'}});
+    await prisma.barber.update({where:{id:admin.barber.id},data:{active:true}});
+    const estimateBarbers = await Promise.all(['Italo','Renan'].map(name=>prisma.user.create({data:{authId:`estimate-${name}-${suffix}`,name:`${name} Teste`,email:`estimate-${name}-${suffix}@local.test`,role:'BARBER',barber:{create:{active:true}}},include:{barber:true}})));
+    const fixtureBarbers = [estimateBarbers[0].barber!.id,estimateBarbers[1].barber!.id,admin.barber.id];
+    const addEstimateVisit = (barberId:string) => prisma.manualService.create({data:{barberId,clientId:clientUser.client!.id,subscriptionId:estimateSubscription.id,createdById:admin.id,serviceDate:new Date('2026-10-05T14:00:00-03:00'),items:{create:[coveredA,coveredB].map(service=>({serviceId:service.id,quantity:1,unitPrice:service.price,chargedUnitPrice:0,duration:service.duration,coveredBySubscription:true,subscriptionPlanName:estimatePlan.name}))}}});
+    for(const [index,count] of [5,3,2].entries()) for(let visit=0;visit<count;visit++) await addEstimateVisit(fixtureBarbers[index]);
+    const financialRecordCounts = async()=>({payouts:await prisma.subscriptionPayout.count(),expenses:await prisma.expense.count(),transactions:await prisma.financialTransaction.count()});
+    const beforeEstimate = await financialRecordCounts();
+    const financeStart=new Date('2026-10-01T00:00:00-03:00');const financeEnd=new Date('2026-10-31T23:59:59-03:00');
+    const beforeMetrics=await getFinanceMetrics(financeStart,financeEnd);
+    const monthlyEstimate=await calculateSubscriptionPayouts('2026-10');
+    assert.equal(monthlyEstimate.revenueBase,1000);assert.equal(monthlyEstimate.poolAmount,400);assert.equal(monthlyEstimate.totalAttendances,10);
+    const initialEstimates=fixtureBarbers.map(id=>projectBarberSubscriptionEstimate(monthlyEstimate,id));
+    assert.deepEqual(initialEstimates.map(row=>row.estimatedAmount),[200,120,80]);
+    assert.deepEqual(initialEstimates.map(row=>row.sharePercent),[50,30,20]);
+    assert.deepEqual(await financialRecordCounts(),beforeEstimate);assert.deepEqual(await getFinanceMetrics(financeStart,financeEnd),beforeMetrics);
+    await addEstimateVisit(fixtureBarbers[1]);
+    const updatedEstimate=projectBarberSubscriptionEstimate(await calculateSubscriptionPayouts('2026-10'),fixtureBarbers[1]);
+    assert.equal(updatedEstimate.estimatedAmount,145.45);assert.deepEqual(await financialRecordCounts(),beforeEstimate);assert.deepEqual(await getFinanceMetrics(financeStart,financeEnd),beforeMetrics);
+    const augustPlan=await prisma.subscriptionPlan.create({data:{name:`Agosto ${suffix}`,value:250,periodDays:30,services:{create:[{serviceId:coveredA.id}]}}});
+    const augustSubscription=await prisma.subscription.create({data:{clientId:clientUser.client.id,subscriptionPlanId:augustPlan.id,startDate:new Date('2026-08-01T00:00:00-03:00'),endDate:new Date('2026-08-31T23:59:59-03:00'),active:true,status:'ACTIVE'}});
+    for(let visit=0;visit<3;visit++) await prisma.manualService.create({data:{barberId:admin.barber.id,clientId:clientUser.client.id,subscriptionId:augustSubscription.id,createdById:admin.id,serviceDate:new Date('2026-08-10T14:00:00-03:00'),items:{create:[{serviceId:coveredA.id,quantity:1,unitPrice:50,chargedUnitPrice:0,duration:60,coveredBySubscription:true,subscriptionPlanName:augustPlan.name}]}}});
+    const augustCalculation=await calculateSubscriptionPayouts('2026-08');
+    const augustRow=augustCalculation.rows.find(row=>row.barberId===admin.barber!.id&&row.type==='MAIN')!;
+    await paySubscriptionPayout({competenceMonth:'2026-08',barberId:admin.barber.id,paidById:admin.id,operationKey:augustRow.operationKey!});
+    const recordsBeforeNavigation=JSON.stringify(await Promise.all([prisma.expense.findMany(),prisma.financialTransaction.findMany(),prisma.subscriptionPayout.findMany()]));
+    const paidBeforeNavigation=Number((await prisma.subscriptionPayout.aggregate({_sum:{paidAmount:true}}))._sum.paidAmount);
+    const dashboardBeforeNavigation=await getFinanceMetrics(financeStart,financeEnd);
+    const competenceFixtures:Record<string,ReturnType<typeof projectBarberSubscriptionEstimate>>={};
+    for(const month of ['2026-10','2026-09','2026-08','2026-09','2026-10']) competenceFixtures[month]=projectBarberSubscriptionEstimate(await calculateSubscriptionPayouts(month),admin.barber.id);
+    assert.equal(competenceFixtures['2026-08'].paidAmount,100);assert.equal(competenceFixtures['2026-08'].attendances,3);
+    assert.equal(competenceFixtures['2026-09'].paidAmount,80);assert.equal(competenceFixtures['2026-09'].attendances,1);
+    assert.equal(competenceFixtures['2026-10'].isPaid,false);assert.equal(competenceFixtures['2026-10'].estimatedAmount,72.73);
+    assert.equal(JSON.stringify(await Promise.all([prisma.expense.findMany(),prisma.financialTransaction.findMany(),prisma.subscriptionPayout.findMany()])),recordsBeforeNavigation);
+    assert.deepEqual(await getFinanceMetrics(financeStart,financeEnd),dashboardBeforeNavigation);
+    assert.equal(Number((await prisma.subscriptionPayout.aggregate({_sum:{paidAmount:true}}))._sum.paidAmount),paidBeforeNavigation);
+    writeFileSync(join(tmpdir(),'renato-competence-fixtures.json'),JSON.stringify(competenceFixtures));
+    const boundaryVisit=(serviceDate:Date)=>prisma.manualService.create({data:{barberId:admin.barber!.id,clientId:clientUser.client!.id,subscriptionId:estimateSubscription.id,createdById:admin.id,serviceDate,items:{create:[{serviceId:coveredA.id,quantity:1,unitPrice:50,chargedUnitPrice:0,duration:60,coveredBySubscription:true,subscriptionPlanName:estimatePlan.name}]}}});
+    await boundaryVisit(new Date('2026-11-01T02:30:00Z'));
+    await boundaryVisit(new Date('2026-11-01T03:30:00Z'));
+    const octoberBoundary=await calculateSubscriptionPayouts('2026-10');
+    const novemberBoundary=await calculateSubscriptionPayouts('2026-11');
+    assert.equal(octoberBoundary.totalAttendances,12,'31/10 23:30 pertence a outubro.');
+    assert.equal(novemberBoundary.totalAttendances,1,'01/11 00:30 pertence a novembro.');
+    const emptyHistorical=projectBarberSubscriptionEstimate(await calculateSubscriptionPayouts('2025-12'),admin.barber.id);
+    assert.equal(emptyHistorical.estimatedAmount,0);assert.equal(emptyHistorical.sharePercent,0);assert.equal(emptyHistorical.isPaid,false);
+    let previewPath: string | undefined;
+    if(process.env.ESTIMATE_PREVIEW === '1') {
+    const cssDirectory=join(process.cwd(),'.next','static','css');
+    const previewCss=readdirSync(cssDirectory).filter(file=>file.endsWith('.css')).map(file=>readFileSync(join(cssDirectory,file),'utf8')).join('\n');
+    const previews=[...initialEstimates,updatedEstimate];
+    const previewMarkup=previews.map((row,index)=>`<section class="mb-4"><h2 class="mb-2 text-white">${['Italo','Renan','Renato','Renan apos nova visita'][index]}</h2>${renderToStaticMarkup(createElement(BarberSubscriptionEstimateCard,{estimate:row}))}</section>`).join('');
+    previewPath=join(tmpdir(),'renato-subscription-estimate-preview.html');
+    writeFileSync(previewPath,`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Estimativa local de repasses</title><style>${previewCss}</style></head><body class="bg-background text-white"><main class="mx-auto max-w-5xl p-4"><div class="grid gap-4 md:grid-cols-3">${previewMarkup}</div></main></body></html>`);
+    }
+
     console.log(JSON.stringify({
       safeDatabase: expectedDatabase,
       appointmentConcurrency: { requests: 2, fulfilled: 1, rejected: 1, adjacentAccepted: true },
@@ -309,7 +374,12 @@ async function main() {
       activeAdminBarberParticipated: true,
       pendingAndRejectedRevenueExcluded: true,
       appointmentAndManualVisitParity: true,
-      zeroAttendanceSafe: true
+      zeroAttendanceSafe: true,
+      monthlyEstimates: initialEstimates.map(row=>({attendances:row.attendances,share:row.sharePercent,amount:row.estimatedAmount})),
+      updatedRenanEstimate:updatedEstimate.estimatedAmount,
+      estimateDidNotChangeFinancialRecordsOrDashboard:true,
+      competenceNavigation:{months:Object.keys(competenceFixtures),recordsUnchanged:true,dashboardUnchanged:true,counts:await financialRecordCounts(),paidTotalBefore:paidBeforeNavigation,paidTotalAfter:Number((await prisma.subscriptionPayout.aggregate({_sum:{paidAmount:true}}))._sum.paidAmount),timezoneBoundary:{october:octoberBoundary.totalAttendances,november:novemberBoundary.totalAttendances},emptyHistoricalPending:true},
+      previewPath
     }, null, 2));
   } finally {
     await clearDisposableData();

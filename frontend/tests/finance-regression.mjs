@@ -13,6 +13,8 @@ const results = { checks: [] };
 const {Prisma} = requireDependency(root + '/frontend/node_modules/@prisma/client');
 let db;
 let role = 'ADMIN';
+let sessionBarberId;
+let clockDate = '2026-08-15';
 const cache = new Map();
 function load(relative) {
   if (cache.has(relative)) return cache.get(relative);
@@ -22,7 +24,8 @@ function load(relative) {
   const loadedModule = {exports:{}};
   const customRequire = (name) => {
     if (name === '@/lib/prisma') return {prisma:new Proxy({}, {get:(_,k)=>db[k]})};
-    if (name === '@/lib/server/internal-auth') return {getAuthenticatedUser:async()=> role ? {user:{id:'admin',role}} : null};
+    if (name === '@/lib/server/internal-auth') return {getAuthenticatedUser:async()=> role ? {user:{id:'admin',role,barber:sessionBarberId?{id:sessionBarberId}:null}} : null};
+    if (name === '@/lib/server/date-periods' && relative !== 'lib/server/date-periods.ts') return {...load('lib/server/date-periods.ts'),todayDateInput:()=> clockDate};
     if (name === '@/lib/server/audit') return {createAuditLog:async()=>{}};
     if (name === 'next/server') return {NextResponse:{json:(body,options)=>({body,status:options?.status??200})}};
     if (name.startsWith('@/')) return load(name.slice(2)+'.ts');
@@ -34,6 +37,7 @@ function load(relative) {
   return loadedModule.exports;
 }
 const payout = load('lib/server/subscription-payouts.ts');
+const estimate = load('lib/server/barber-subscription-estimate.ts');
 const finance = load('lib/server/finance-rules.ts');
 const manual = load('lib/server/manual-services.ts');
 const report = load('lib/server/barber-report.ts');
@@ -114,6 +118,64 @@ await check('avulso multiplier x5 preserved',async()=>{reportDb(sampleAppointmen
 await check('appointment snapshot survives plan cancellation and price change',()=>{const a=sampleAppointment();a.financialSnapshot=finance.appointmentFinancials(a).snapshot;a.client.subscriptions[0].active=false;a.services[1].price=100;const financials=finance.appointmentFinancials(a);assert.equal(financials.chargedGross,30);assert.equal(financials.commission,15);assert.equal(financials.hasCoveredVisit,true);});
 await check('payment failure rolls back all financial writes in transaction double',async()=>{reset();db.financialTransaction.create=async()=>{throw new Error('injected failure');};await assert.rejects(pay(),/injected failure/);assert.equal(state.payouts.length,0);assert.equal(state.expenses.length,0);});
 results.baseline={pass:results.checks.slice(0,baselineCount).filter(r=>r.status==='PASS').length,fail:results.checks.slice(0,baselineCount).filter(r=>r.status==='FAIL').length};
+await check('monthly own estimate equals ADMIN and preserves all financial records',async()=>{
+  reset([5,3,2]);role='BARBER';const before=JSON.stringify(state);const admin=await payout.calculateSubscriptionPayouts('2026-08');
+  for(const [i,id] of ['a','b','c'].entries()){sessionBarberId=id;const r=await estimate.getOwnSubscriptionEstimate('2026-08');assert.equal(r.estimatedAmount,[200,120,80][i]);assert.equal(r.estimatedAmount,admin.rows.find(row=>row.barberId===id).calculatedAmount);assert.equal(r.attendances,[5,3,2][i]);}
+  await assert.rejects(estimate.getOwnSubscriptionEstimate('2026-09'),/futura/);
+  await assert.rejects(estimate.getOwnSubscriptionEstimate('other'),/invalida/);
+  assert.equal(JSON.stringify(state),before);role='CLIENT';await assert.rejects(estimate.getOwnSubscriptionEstimate(),/restrito/);
+});
+await check('estimate is dynamic; zero attendance safe; ADMIN barber supported',async()=>{
+  reset([5,3,2]);role='BARBER';sessionBarberId='b';state.counts=[5,4,2];assert.equal((await estimate.getOwnSubscriptionEstimate()).estimatedAmount,145.45);state.counts=[6,4,2];assert.equal((await estimate.getOwnSubscriptionEstimate()).estimatedAmount,133.33);reset([0,0,0]);assert.equal((await estimate.getOwnSubscriptionEstimate()).sharePercent,0);role='ADMIN';reset([5,3,2]);sessionBarberId='c';assert.equal((await estimate.getOwnSubscriptionEstimate()).estimatedAmount,80);
+});
+await check('estimate PAID and adjustments preserve paid history',async()=>{
+  reset();role='BARBER';sessionBarberId='a';await pay();let r=await estimate.getOwnSubscriptionEstimate();assert.equal(r.isPaid,true);assert.equal(r.paidAmount,200);assert.equal(r.estimatedAmount,0);state.counts=[3,2,0];assert.equal((await estimate.getOwnSubscriptionEstimate()).pendingAdjustment,40);state.counts=[1,3,0];assert.equal((await estimate.getOwnSubscriptionEstimate()).needsReview,true);assert.equal(state.expenses.length,1);assert.equal(state.transactions.length,1);
+});
+await check('estimate read leaves complete report and finance dashboard identical',async()=>{
+  reportDb(sampleAppointment());role='BARBER';sessionBarberId='a';db.financialTransaction.findMany=async()=>state.transactions;db.expense.findMany=async()=>state.expenses;
+  const before=await report.getBarberReport(filters);const financeBefore=await finance.getFinanceMetrics(new Date('2026-08-01'),new Date('2026-09-01'));
+  await estimate.getOwnSubscriptionEstimate();assert.deepEqual((await report.getBarberReport(filters)).summary,before.summary);assert.deepEqual(await finance.getFinanceMetrics(new Date('2026-08-01'),new Date('2026-09-01')),financeBefore);
+});
+await check('estimate exact cent rounding equals administrative calculation',async()=>{
+  reset([1,1,1],250);role='BARBER';const admin=await payout.calculateSubscriptionPayouts('2026-08');for(const id of ['a','b','c']){sessionBarberId=id;assert.equal((await estimate.getOwnSubscriptionEstimate()).estimatedAmount,admin.rows.find(row=>row.barberId===id).calculatedAmount);}
+});
+await check('estimate appointment/manual parity; multiple covered services one visit; extra excluded',async()=>{
+  reportDb(sampleAppointment());role='BARBER';sessionBarberId='a';const a=await estimate.getOwnSubscriptionEstimate();state.appointments=[];state.counts=[1,0,0];const m=await estimate.getOwnSubscriptionEstimate();assert.equal(a.attendances,1);assert.equal(m.attendances,1);assert.equal(m.estimatedAmount,a.estimatedAmount);assert.equal(m.estimatedAmount,400);
+});
+await check('estimate professional with no visits receives zero; anonymous and missing barber denied',async()=>{
+  reset([0,3,2]);role='BARBER';sessionBarberId='a';const r=await estimate.getOwnSubscriptionEstimate();assert.equal(r.estimatedAmount,0);assert.equal(r.sharePercent,0);role=null;await assert.rejects(estimate.getOwnSubscriptionEstimate(),/restrito/);role='BARBER';sessionBarberId=undefined;await assert.rejects(estimate.getOwnSubscriptionEstimate(),/restrito/);
+});
+await check('estimate month and label use Sao Paulo at UTC month boundary',()=>{
+  const dates=load('lib/server/date-periods.ts');assert.equal(dates.dateInputFromDate(new Date('2026-11-01T02:30:00Z')),'2026-10-31');assert.equal(dates.dateInputFromDate(new Date('2026-11-01T03:00:00Z')),'2026-11-01');assert.match(payout.competenceMonthLabel('2026-10'),/outubro/);
+});
+await check('only administrative payment changes realized gains; estimate read preserves paid totals',async()=>{
+  reportDb(sampleAppointment());role='BARBER';sessionBarberId='a';const before=await report.getBarberReport(filters);assert.equal(before.summary.totalCommission,15);await estimate.getOwnSubscriptionEstimate();assert.equal((await report.getBarberReport(filters)).summary.totalCommission,15);
+  await pay();const paid=state.payouts[0];const paidFilters={...filters,period:'custom',startDate:load('lib/server/date-periods.ts').dateInputFromDate(paid.paidAt),endDate:load('lib/server/date-periods.ts').dateInputFromDate(paid.paidAt)};
+  const after=await report.getBarberReport(paidFilters);assert.equal(after.summary.subscriptionCommission,400);const snapshot=JSON.stringify(state);await estimate.getOwnSubscriptionEstimate();assert.equal(JSON.stringify(state),snapshot);assert.deepEqual((await report.getBarberReport(paidFilters)).summary,after.summary);
+});
+await check('competence API: current default, three month reads, future and forged identity blocked',async()=>{
+  reset([5,3,2]);role='BARBER';sessionBarberId='b';clockDate='2026-10-06';
+  const endpoint=load('app/api/internal/subscription-estimate/route.ts');
+  const before=JSON.stringify(state);
+  const current=await endpoint.GET(new Request('http://localhost/api/internal/subscription-estimate'));
+  assert.equal(current.status,200);assert.equal(current.body.competenceMonth,'2026-10');assert.equal(current.body.estimatedAmount,120);
+  for(const month of ['2026-10','2026-09','2026-08','2026-09','2026-10']){
+    const response=await endpoint.GET(new Request('http://localhost/api/internal/subscription-estimate?competenceMonth='+month+'&barberId=a'));
+    assert.equal(response.status,200);assert.equal(response.body.competenceMonth,month);assert.equal(response.body.estimatedAmount,120);
+  }
+  assert.equal((await endpoint.GET(new Request('http://localhost/api/internal/subscription-estimate?competenceMonth=2026-11'))).status,400);
+  assert.equal((await endpoint.GET(new Request('http://localhost/api/internal/subscription-estimate?competenceMonth=2026-13'))).status,400);
+  role='CLIENT';assert.equal((await endpoint.GET(new Request('http://localhost/api/internal/subscription-estimate?barberId=b'))).status,403);
+  role=null;assert.equal((await endpoint.GET(new Request('http://localhost/api/internal/subscription-estimate'))).status,403);
+  assert.equal(JSON.stringify(state),before);clockDate='2026-08-15';
+});
+await check('paid card attendance and participation stay at MAIN snapshot after retroactive changes',async()=>{
+  reset([2,2,0]);role='BARBER';sessionBarberId='a';await pay();
+  const before=await estimate.getOwnSubscriptionEstimate();state.counts=[9,1,0];
+  const after=await estimate.getOwnSubscriptionEstimate();
+  assert.equal(after.attendances,before.attendances);assert.equal(after.sharePercent,before.sharePercent);assert.equal(after.paidAmount,before.paidAmount);
+  assert.ok(after.pendingAdjustment>0);
+});
 console.log(JSON.stringify(results,null,2));
 if(results.checks.some(r=>r.status==='FAIL'))process.exitCode=1;
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -77,7 +77,7 @@ export function currentCompetenceMonth() {
 }
 
 export function competenceMonthLabel(competenceMonth: string) {
-  return monthStart(competenceMonth).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return monthStart(competenceMonth).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
 }
 
 function validCompetenceMonth(value: string) {
