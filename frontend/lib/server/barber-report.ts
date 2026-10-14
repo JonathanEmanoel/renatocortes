@@ -93,6 +93,7 @@ type ManualAuditMetadata = {
 
 const financialAppointmentSelect = {
   id: true,
+  financialSnapshot: true,
   status: true,
   dataHora: true,
   service: { select: { id: true, name: true, price: true } },
@@ -101,13 +102,13 @@ const financialAppointmentSelect = {
     select: {
       user: { select: { name: true } },
       subscriptions: {
-        where: { active: true, status: "ACTIVE", deletedAt: null },
         select: {
           active: true,
           status: true,
           deletedAt: true,
           startDate: true,
           endDate: true,
+          legacyRevenueSnapshot: true,
           subscriptionPlan: { select: { name: true, services: { select: { serviceId: true } } } }
         }
       }

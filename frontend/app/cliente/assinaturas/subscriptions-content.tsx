@@ -12,10 +12,11 @@ import type { SubscriptionPlan } from "@/types/client-area";
 
 type CurrentSubscription = {
   id: string;
-  status: "ACTIVE" | "PENDING";
+  status: "ACTIVE" | "PENDING" | "EXPIRED";
   planId: string;
   planName: string;
   price: string;
+  canChangePlan: boolean;
   renewalDate: string | null;
   benefits: string[];
 };
@@ -83,7 +84,7 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
   }
 
   const renewal = currentSubscription?.renewalDate
-    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(currentSubscription.renewalDate))
+    ? new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" }).format(new Date(currentSubscription.renewalDate))
     : "A definir";
 
   return (
@@ -96,14 +97,14 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
               <div className="grid h-14 w-14 place-items-center rounded-full border border-primary/40 bg-primary/10"><Crown className="h-8 w-8 text-primary" /></div>
-              <div className="mt-5 flex items-center gap-3"><h2 className="text-2xl font-black uppercase md:text-4xl">{currentSubscription.planName}</h2><Badge tone={currentSubscription.status === "ACTIVE" ? "green" : "white"}>{currentSubscription.status === "ACTIVE" ? "Ativa" : "Em análise"}</Badge></div>
+              <div className="mt-5 flex items-center gap-3"><h2 className="text-2xl font-black uppercase md:text-4xl">{currentSubscription.planName}</h2><Badge tone={currentSubscription.status === "ACTIVE" ? "green" : "white"}>{currentSubscription.status === "ACTIVE" ? "Ativa" : currentSubscription.status === "EXPIRED" ? "Vencida" : "Em análise"}</Badge></div>
               <p className="mt-3 text-lg font-bold text-primary">{currentSubscription.price} <span className="text-sm font-medium text-white/55">por mês</span></p>
             </div>
             <Button type="button" variant="outline" onClick={cancelSubscription} disabled={isCancelling}>{isCancelling ? "Cancelando..." : "Cancelar assinatura"}<XCircle className="h-5 w-5" /></Button>
           </div>
           <div className="mt-7 grid gap-4 border-t border-white/10 pt-6 md:grid-cols-2">
-            <p className="flex items-center gap-3 text-white/75"><CalendarClock className="h-5 w-5 text-primary" />{currentSubscription.status === "ACTIVE" ? `Renovação em ${renewal}` : "Aguardando confirmação da barbearia"}</p>
-            <p className="text-sm text-white/55">Para alterar o plano, escolha outra opção abaixo.</p>
+            <p className="flex items-center gap-3 text-white/75"><CalendarClock className="h-5 w-5 text-primary" />{currentSubscription.status === "ACTIVE" ? `Renovação em ${renewal}` : currentSubscription.status === "EXPIRED" ? `Mensalidade vencida em ${renewal}` : "Aguardando confirmação da barbearia"}</p>
+            <p className="text-sm text-white/55">{currentSubscription.canChangePlan ? "Para alterar o plano, escolha outra opção abaixo." : "Alteracao de plano sujeita a revisao administrativa para preservar o ciclo pago."}</p>
           </div>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             {currentSubscription.benefits.map((benefit) => <p key={benefit} className="flex items-center gap-2 text-sm text-white/75"><Check className="h-4 w-4 shrink-0 text-primary" />{benefit}</p>)}
@@ -130,7 +131,7 @@ export function SubscriptionsContent({ plans, currentSubscription }: { plans: Su
           </div>
         ) : null}
         <div className="grid gap-5 lg:grid-cols-3">
-          {plans.map((plan) => <SubscriptionCard key={plan.id} plan={plan} onRequest={selectPlan} isLoading={loadingPlanId === plan.id} disabled={Boolean(whatsAppSuccessUrl) || plan.id === currentSubscription?.planId} actionLabel={plan.id === currentSubscription?.planId ? "Plano atual" : currentSubscription ? "Alterar para este plano" : "Solicitar plano"} />)}
+          {plans.map((plan) => <SubscriptionCard key={plan.id} plan={plan} onRequest={selectPlan} isLoading={loadingPlanId === plan.id} disabled={Boolean(whatsAppSuccessUrl) || Boolean(currentSubscription && !currentSubscription.canChangePlan) || plan.id === currentSubscription?.planId} actionLabel={plan.id === currentSubscription?.planId ? "Plano atual" : currentSubscription ? "Alterar para este plano" : "Solicitar plano"} />)}
         </div>
       </section>
     </ClientShell>

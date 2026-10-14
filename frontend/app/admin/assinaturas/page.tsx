@@ -4,6 +4,8 @@ export const revalidate = 0;
 import { redirect } from "next/navigation";
 import { InternalPageHeader } from "@/components/internal/internal-page-header";
 import { SubscriptionActionButtons } from "@/components/internal/subscription-action-buttons";
+import { SubscriptionBillingButtons } from "@/components/internal/subscription-billing-buttons";
+import { todayDateInput } from "@/lib/server/date-periods";
 import { formatCurrency } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getDashboardPath } from "@/lib/auth-routes";
@@ -15,7 +17,7 @@ function renewalMessage(input: { clientName: string; planName: string; endDate?:
     "Ola!",
     "",
     `Sua assinatura ${input.planName} na Renato Cortes Barbearia esta proxima do vencimento.`,
-    input.endDate ? `Vencimento: ${input.endDate.toLocaleDateString("pt-BR")}` : "Vencimento: nao informado",
+    input.endDate ? `Vencimento: ${input.endDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}` : "Vencimento: nao informado",
     "",
     "Podemos renovar para voce manter seus beneficios?",
     "",
@@ -89,7 +91,7 @@ export default async function AdminSubscriptionsPage() {
                 renewalMessage({
                   clientName: subscription.client.user.name,
                   planName: subscription.subscriptionPlan.name,
-                  endDate: subscription.endDate
+                  endDate: subscription.nextCycleDueDate ?? subscription.endDate
                 }),
                 subscription.client.user.phone
               );
@@ -99,14 +101,15 @@ export default async function AdminSubscriptionsPage() {
                     <div>
                       <p className="font-black uppercase">{subscription.client.user.name}</p>
                       <p className="mt-1 text-sm text-white/60">{subscription.subscriptionPlan.name} - {formatCurrency(Number(subscription.subscriptionPlan.value))}</p>
-                      <p className="mt-1 text-sm text-white/50">Vence em: {subscription.endDate ? subscription.endDate.toLocaleDateString("pt-BR") : "Nao informado"}</p>
-                      <p className="mt-1 text-sm font-bold text-primary">{daysRemaining(subscription.endDate)}</p>
+                      <p className="mt-1 text-sm text-white/50">Vence em: {(subscription.nextCycleDueDate ?? subscription.endDate)?.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) ?? "Nao informado"}</p>
+                      <p className="mt-1 text-sm font-bold text-primary">{daysRemaining(subscription.nextCycleDueDate ?? subscription.endDate)}</p>
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       <a href={url} className="rounded-[10px] border border-primary bg-primary px-4 py-3 text-sm font-black uppercase text-black">
                         Renovar no WhatsApp
                       </a>
                       <SubscriptionActionButtons subscriptionId={subscription.id} active />
+                      {session.user.role === "ADMIN" ? <SubscriptionBillingButtons subscriptionId={subscription.id} today={todayDateInput()} /> : null}
                     </div>
                   </div>
                 </article>
@@ -125,8 +128,9 @@ export default async function AdminSubscriptionsPage() {
                   <p className="font-black uppercase">{subscription.client.user.name}</p>
                   <p className="mt-1 text-sm text-white/55">{subscription.client.user.phone ?? "Telefone nao informado"}</p>
                   <p className="mt-1 text-sm text-white/60">{subscription.subscriptionPlan.name}</p>
-                  <p className="mt-1 text-sm text-primary">{subscription.endDate ? subscription.endDate.toLocaleDateString("pt-BR") : "Sem vencimento"} - {daysRemaining(subscription.endDate)}</p>
+                  <p className="mt-1 text-sm text-primary">{(subscription.nextCycleDueDate ?? subscription.endDate)?.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) ?? "Sem vencimento"} - {daysRemaining(subscription.nextCycleDueDate ?? subscription.endDate)}</p>
                   <SubscriptionActionButtons subscriptionId={subscription.id} active />
+                  {session.user.role === "ADMIN" ? <SubscriptionBillingButtons subscriptionId={subscription.id} today={todayDateInput()} /> : null}
                 </article>
               ))}
             </div>
@@ -142,6 +146,7 @@ export default async function AdminSubscriptionsPage() {
                   <p className="mt-1 text-sm text-white/55">{subscription.client.user.phone ?? "Telefone nao informado"}</p>
                   <p className="mt-1 text-sm text-white/60">{subscription.subscriptionPlan.name}</p>
                   <SubscriptionActionButtons subscriptionId={subscription.id} />
+                  {session.user.role === "ADMIN" ? <SubscriptionBillingButtons subscriptionId={subscription.id} today={todayDateInput()} /> : null}
                 </article>
               ))}
             </div>
@@ -158,6 +163,7 @@ export default async function AdminSubscriptionsPage() {
                 <p className="mt-1 text-sm text-white/55">{subscription.client.user.phone ?? "Telefone nao informado"}</p>
                 <p className="mt-1 text-sm text-white/60">{subscription.subscriptionPlan.name}</p>
                 <p className="mt-1 text-sm text-primary">{subscription.status}</p>
+                {subscription.status === "EXPIRED" && session.user.role === "ADMIN" ? <SubscriptionBillingButtons subscriptionId={subscription.id} today={todayDateInput()} /> : null}
                 <p className="mt-1 text-sm text-white/50">{subscription.endDate ? subscription.endDate.toLocaleDateString("pt-BR") : "Sem vencimento"}</p>
               </article>
             ))}

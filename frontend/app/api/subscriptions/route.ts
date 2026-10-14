@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
 import { getAuthenticatedClient } from "@/lib/server/auth";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { dateInputFromDate, startOfSaoPauloDay } from "@/lib/server/date-periods";
+import { assertNoClosedSubscriptionArrears } from "@/lib/server/subscription-billing";
 
 const requestSchema = z.object({
   planId: z.string().uuid()
@@ -53,14 +55,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Voce ja possui uma assinatura em andamento. Gerencie-a nesta pagina." }, { status: 409 });
     }
 
-    const subscription = await prisma.subscription.create({
+    const originalStart = new Date();
+    const originalDate = dateInputFromDate(originalStart);
+    const subscription = await prisma.$transaction(async (db) => {
+      await db.$queryRaw`SELECT id FROM clients WHERE id = ${session.client.id} FOR UPDATE`;
+      const concurrent = await db.subscription.findFirst({ where: { clientId: session.client.id, deletedAt: null, status: { in: ["ACTIVE", "PENDING"] } } });
+      if (concurrent) throw new Error("Solicitacao de assinatura ja existe.");
+      await assertNoClosedSubscriptionArrears(session.client.id, db);
+      return db.subscription.create({
       data: {
         clientId: session.client.id,
         subscriptionPlanId: plan.id,
-        startDate: new Date(),
+        startDate: originalStart,
+        baseDueDay: Number(originalDate.slice(8)),
+        nextCycleDueDate: startOfSaoPauloDay(originalDate),
+        nextCycleStartDate: originalStart,
         active: false,
         status: "PENDING"
       }
+      });
     });
 
     const message = [
@@ -91,7 +104,10 @@ export async function POST(request: Request) {
       subscriptionId: subscription.id,
       whatsAppUrl: buildWhatsAppUrl(message)
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && ["Solicitacao de assinatura ja existe.", "Assinatura anterior legada", "Existe ciclo anterior pendente"].some(prefix => error.message.startsWith(prefix))) {
+      return NextResponse.json({ message: error.message }, { status: 409 });
+    }
     return NextResponse.json(
       { message: "Nao foi possivel solicitar a assinatura agora." },
       { status: 500 }
@@ -128,6 +144,10 @@ export async function PATCH(request: Request) {
         data: { active: false, status: "CANCELED", endDate: new Date() }
       });
       return NextResponse.json({ message: "Assinatura cancelada com sucesso." });
+    }
+
+    if (subscription.billingFirstDueDate) {
+      return NextResponse.json({ message: "Troca imediata de plano bloqueada para preservar o ciclo pago e as mensalidades pendentes. Solicite revisao administrativa." }, { status: 409 });
     }
 
     const plan = await prisma.subscriptionPlan.findFirst({

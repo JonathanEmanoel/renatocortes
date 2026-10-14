@@ -18,7 +18,7 @@ export default async function SubscriptionsPage() {
       orderBy: { value: "asc" }
     }),
     prisma.subscription.findFirst({
-      where: { clientId: session.client.id, deletedAt: null, status: { in: ["ACTIVE", "PENDING"] } },
+      where: { clientId: session.client.id, deletedAt: null, status: { in: ["ACTIVE", "PENDING", "EXPIRED"] } },
       include: { subscriptionPlan: { include: { services: { include: { service: true } } } } },
       orderBy: [{ status: "asc" }, { updatedAt: "desc" }]
     })
@@ -40,11 +40,12 @@ export default async function SubscriptionsPage() {
   const currentSubscription = subscription
     ? {
         id: subscription.id,
-        status: subscription.status as "ACTIVE" | "PENDING",
+        status: (subscription.status === "ACTIVE" && (!subscription.active || (subscription.endDate && subscription.endDate < new Date())) ? "EXPIRED" : subscription.status) as "ACTIVE" | "PENDING" | "EXPIRED",
         planId: subscription.subscriptionPlan.id,
         planName: subscription.subscriptionPlan.name,
         price: formatCurrency(Number(subscription.subscriptionPlan.value)),
-        renewalDate: subscription.endDate?.toISOString() ?? null,
+        canChangePlan: !subscription.billingFirstDueDate,
+        renewalDate: (subscription.nextCycleDueDate ?? subscription.endDate)?.toISOString() ?? null,
         benefits: [
           subscription.subscriptionPlan.description ?? "Benefícios exclusivos Renato Cortes.",
           ...subscription.subscriptionPlan.services.map((item) => item.service.name)

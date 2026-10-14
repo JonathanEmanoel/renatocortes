@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-type SubscriptionAction = "approve" | "reject" | "cancel";
+type SubscriptionAction = "reject" | "cancel";
 
 export function SubscriptionActionButtons({ subscriptionId, active }: { subscriptionId: string; active?: boolean }) {
   const router = useRouter();
@@ -45,7 +45,6 @@ export function SubscriptionActionButtons({ subscriptionId, active }: { subscrip
           <Button type="button" variant="outline" onClick={() => runAction("cancel")} disabled={isLoading}>Cancelar assinatura</Button>
         ) : (
           <>
-            <Button type="button" onClick={() => runAction("approve")} disabled={isLoading}>Aprovar</Button>
             <Button type="button" variant="outline" onClick={() => runAction("reject")} disabled={isLoading}>Recusar</Button>
           </>
         )}

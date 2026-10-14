@@ -23,22 +23,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: "Confira os dados da assinatura." }, { status: 400 });
     }
 
+    if (payload.data.action === "approve") {
+      return NextResponse.json({ message: "Use Confirmar pagamento para registrar o ciclo e sua mensalidade." }, { status: 409 });
+    }
+
     const now = new Date();
-    const endDate = new Date(now);
-    endDate.setDate(endDate.getDate() + 30);
 
     const subscription = await prisma.subscription.update({
       where: { id: payload.data.subscriptionId },
-      data:
-        payload.data.action === "approve"
-          ? {
-              active: true,
-              status: "ACTIVE",
-              startDate: now,
-              endDate,
-              deletedAt: null
-            }
-          : {
+      data: {
               active: false,
               status: payload.data.action === "cancel" ? "CANCELED" : "REJECTED",
               endDate: payload.data.action === "cancel" ? now : undefined,

@@ -98,6 +98,7 @@ const coveredAppointmentVisit = (appointment: Parameters<typeof appointmentFinan
 
 const payoutAppointmentSelect = {
   id: true,
+  financialSnapshot: true,
   barberId: true,
   dataHora: true,
   service: { select: { id: true, name: true, price: true } },
@@ -105,13 +106,13 @@ const payoutAppointmentSelect = {
   client: {
     select: {
       subscriptions: {
-        where: { active: true, status: "ACTIVE", deletedAt: null },
         select: {
           active: true,
           status: true,
           deletedAt: true,
           startDate: true,
           endDate: true,
+          legacyRevenueSnapshot: true,
           subscriptionPlan: { select: { name: true, services: { select: { serviceId: true } } } }
         }
       }

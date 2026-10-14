@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { dateInputFromDate } from "@/lib/server/date-periods";
 
 /**
  * Regras financeiras centrais usadas por dashboards, relatórios e APIs.
@@ -24,6 +25,7 @@ type SubscriptionLike = {
   startDate: Date;
   endDate: Date | null;
   deletedAt?: Date | null;
+  legacyRevenueSnapshot?: unknown;
 };
 
 /**
@@ -92,6 +94,7 @@ type FinancialAppointment = {
 
 const financialAppointmentSelect = {
   dataHora: true,
+  financialSnapshot: true,
   service: { select: { id: true, name: true, price: true } },
   services: { select: { serviceId: true, price: true, service: { select: { name: true } } } },
   client: {
@@ -103,6 +106,7 @@ const financialAppointmentSelect = {
           deletedAt: true,
           startDate: true,
           endDate: true,
+          legacyRevenueSnapshot: true,
           subscriptionPlan: { select: { name: true, services: { select: { serviceId: true } } } }
         }
       }
@@ -112,7 +116,14 @@ const financialAppointmentSelect = {
 
 /** Fonte comum de cobertura, extras e comissao. Finalizados novos usam o snapshot salvo. */
 export function appointmentFinancials(appointment: FinancialAppointment) {
-  const subscription = appointment.client.subscriptions.find((item) => hasActiveSubscriptionAt([item], appointment.dataHora));
+  const subscriptions = appointment.client.subscriptions.map((item) => {
+    const legacy = item.legacyRevenueSnapshot as { confirmedAt?: string; active: boolean; status: string; startDate: string; endDate: string | null; planName?: string; coveredServiceIds?: string[] } | null | undefined;
+    if (!legacy?.confirmedAt || appointment.dataHora >= new Date(legacy.confirmedAt)) return item;
+    // Confirming an invoice must not implicitly reclassify earlier appointments.
+    return { ...item, active: legacy.active, status: legacy.status, startDate: new Date(legacy.startDate), endDate: legacy.endDate ? new Date(legacy.endDate) : null,
+      subscriptionPlan: { name: legacy.planName ?? item.subscriptionPlan.name, services: legacy.coveredServiceIds?.map(serviceId => ({ serviceId })) ?? item.subscriptionPlan.services } };
+  });
+  const subscription = subscriptions.find((item) => hasActiveSubscriptionAt([item], appointment.dataHora));
   const coveredIds = new Set(subscription?.subscriptionPlan.services.map((item) => item.serviceId) ?? []);
   const services = appointment.services.length
     ? appointment.services.map((item) => ({ id: item.serviceId, name: item.service.name, price: Number(item.price), covered: coveredIds.has(item.serviceId) }))
@@ -133,27 +144,34 @@ export function appointmentFinancials(appointment: FinancialAppointment) {
 }
 
 /**
- * Base de receita usada pelo financeiro e rateio: um valor atual de plano por
- * assinatura ACTIVE, ativa e visivel cuja vigencia intersecta o intervalo.
- * Pendentes/recusadas nao entram. Nao soma pagamentos, nao faz pro-rata e nao
- * multiplica pelo numero de meses; intervalos distintos podem incluir o mesmo
- * plano. Essa semantica deve ser distinguida de recebimentos por paidAt.
+ * Ciclos confirmados entram uma vez pela competencia do vencimento, usando
+ * Payment.amount. Legados mantem a leitura anterior ate a adocao explicita;
+ * meses anteriores ao corte usam o snapshot legado, sem inferir pagamentos.
+ * A Transaction de assinatura nao e somada novamente pelo dashboard.
  */
 export async function getSubscriptionRevenueForPeriod(startDate: Date, endDate: Date, db: Prisma.TransactionClient = prisma) {
   // Mantém a base histórica atual do projeto: assinaturas ativas no período
   // contribuem pelo valor do plano vinculado à assinatura.
   const subscriptions = await db.subscription.findMany({
     where: {
-      status: "ACTIVE",
-      active: true,
       deletedAt: null,
-      startDate: { lte: endDate },
-      OR: [{ endDate: null }, { endDate: { gte: startDate } }]
+      OR: [
+        { billingFirstDueDate: { not: null } },
+        { status: "ACTIVE", active: true, startDate: { lte: endDate }, OR: [{ endDate: null }, { endDate: { gte: startDate } }] }
+      ]
     },
-    include: { subscriptionPlan: true }
+    include: { subscriptionPlan: true, cycles: { where: { dueDate: { gte: startDate, lte: endDate }, payment: { status: "PAID", deletedAt: null } }, include: { payment: true } } }
   });
 
-  return subscriptions.reduce((sum, subscription) => sum + Number(subscription.subscriptionPlan.value), 0);
+  return subscriptions.reduce((sum, subscription) => {
+    if (!subscription.billingFirstDueDate) return sum + Number(subscription.subscriptionPlan.value);
+    const receipts = subscription.cycles.reduce((total, cycle) => total + Number(cycle.payment.amount), 0);
+    const cutover = new Date(`${dateInputFromDate(subscription.billingFirstDueDate).slice(0, 7)}-01T00:00:00-03:00`);
+    const snapshot = subscription.legacyRevenueSnapshot as { active?: boolean; status?: string; startDate?: string; endDate?: string | null; value?: string } | null;
+    const legacyEnd = new Date(Math.min(+endDate, +cutover - 1));
+    const legacy = +startDate < +cutover && snapshot?.active && snapshot.status === "ACTIVE" && snapshot.startDate && new Date(snapshot.startDate) <= legacyEnd && (!snapshot.endDate || new Date(snapshot.endDate) >= startDate) ? Number(snapshot.value) : 0;
+    return sum + receipts + legacy;
+  }, 0);
 }
 
 /**

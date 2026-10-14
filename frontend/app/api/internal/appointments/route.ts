@@ -36,6 +36,7 @@ const internalAppointmentSelect = {
           deletedAt: true,
           startDate: true,
           endDate: true,
+          legacyRevenueSnapshot: true,
           subscriptionPlan: { select: { name: true, services: { select: { serviceId: true } } } }
         }
       }
