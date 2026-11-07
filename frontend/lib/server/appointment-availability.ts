@@ -10,6 +10,7 @@ import {
 } from "@/lib/client-scheduling";
 import { prisma } from "@/lib/prisma";
 import { SAO_PAULO_OFFSET } from "@/lib/server/date-periods";
+import { timeInterval } from "@/lib/availability-rules";
 
 type AppointmentDatabase = Prisma.TransactionClient | typeof prisma;
 
@@ -117,8 +118,14 @@ export async function validateAvailability(input: {
     const start = minutesInSaoPaulo(appointment.dataHora);
     return { start, end: start + sumServiceDuration(appointment) };
   });
+  const breaks = await db.barberScheduleBreak.findMany({
+    where: { barberId: input.barberId, weekDay: weekDayFromDateInput(input.date) },
+    select: { startTime: true, endTime: true }
+  });
+  // Pauses are busy intervals, not new work windows: the existing start grid stays intact.
+  busy.push(...breaks.map(timeInterval));
   if (input.time !== undefined && !slotFitsAvailability(requestedStart, totalDuration, windows, busy)) {
-    return { ok: false as const, message: "Este horario ja esta ocupado." };
+    return { ok: false as const, message: "Este horario esta ocupado ou indisponivel." };
   }
 
   const times = clientAvailableTimes(input.date, totalDuration, windows, busy, now);

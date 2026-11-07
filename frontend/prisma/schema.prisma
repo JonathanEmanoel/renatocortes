@@ -76,6 +76,7 @@ model Barber {
   deletedAt                DateTime?
   appointments             Appointment[]
   availability             BarberAvailability[]
+  scheduleBreaks           BarberScheduleBreak[]
   user                     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   commissions              EmployeeCommission[]
   reviews                  Review[]
@@ -647,6 +648,24 @@ model BarberAvailability {
   @@index([barberId])
   @@index([weekDay])
   @@map("barber_availability")
+}
+
+/// Indisponibilidade recorrente em horario civil de America/Sao_Paulo.
+/// Pertence ao barbeiro/dia, preservando pausas quando a jornada e desativada.
+model BarberScheduleBreak {
+  id        String   @id @default(uuid())
+  barberId  String
+  weekDay   Int
+  startTime String
+  endTime   String
+  label     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  barber    Barber   @relation(fields: [barberId], references: [id], onDelete: Cascade)
+
+  @@unique([barberId, weekDay, startTime])
+  @@index([barberId, weekDay])
+  @@map("barber_schedule_breaks")
 }
 
 /// Notificacao interna ligada a um usuario.

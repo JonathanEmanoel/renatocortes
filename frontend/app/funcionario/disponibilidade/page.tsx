@@ -24,17 +24,19 @@ export default async function BarberAvailabilityPage() {
   if (!session.user.barber?.id) redirect("/admin");
 
   const availability = await prisma.barberAvailability.findMany({
-    where: { barberId: session.user.barber.id, active: true, deletedAt: null },
-    orderBy: { weekDay: "asc" }
+    where: { barberId: session.user.barber.id, deletedAt: null },
+    orderBy: [{ weekDay: "asc" }, { startTime: "asc" }]
   });
+  const breaks = await prisma.barberScheduleBreak.findMany({ where: { barberId: session.user.barber.id }, orderBy: { startTime: "asc" } });
 
   const days = weekDays.map((day) => {
     const current = availability.find((item) => item.weekDay === day.weekDay);
     return {
       ...day,
-      active: Boolean(current),
+      active: Boolean(current?.active),
       startTime: current?.startTime ?? "09:00",
-      endTime: current?.endTime ?? "18:00"
+      endTime: current?.endTime ?? "18:00",
+      breaks: breaks.filter((pause) => pause.weekDay === day.weekDay).map((pause) => ({ startTime: pause.startTime, endTime: pause.endTime, label: pause.label ?? "" }))
     };
   });
 

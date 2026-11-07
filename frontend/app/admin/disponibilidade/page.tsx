@@ -25,7 +25,7 @@ export default async function AdminAvailabilityPage() {
 
   const barbers = await prisma.barber.findMany({
     where: { active: true, deletedAt: null },
-    include: { user: true, availability: { where: { active: true, deletedAt: null }, orderBy: { weekDay: "asc" } } },
+    include: { user: true, availability: { where: { deletedAt: null }, orderBy: [{ weekDay: "asc" }, { startTime: "asc" }] }, scheduleBreaks: { orderBy: { startTime: "asc" } } },
     orderBy: { user: { name: "asc" } }
   });
 
@@ -45,7 +45,7 @@ export default async function AdminAvailabilityPage() {
           {barbers.map((barber) => {
             const days = weekDays.map((day) => {
               const current = barber.availability.find((item) => item.weekDay === day.weekDay);
-              return { ...day, active: Boolean(current), startTime: current?.startTime ?? "09:00", endTime: current?.endTime ?? "18:00" };
+              return { ...day, active: Boolean(current?.active), startTime: current?.startTime ?? "09:00", endTime: current?.endTime ?? "18:00", breaks: barber.scheduleBreaks.filter((pause) => pause.weekDay === day.weekDay).map((pause) => ({ startTime: pause.startTime, endTime: pause.endTime, label: pause.label ?? "" })) };
             });
             return (
               <section key={barber.id} className="grid gap-3">

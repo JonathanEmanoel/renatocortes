@@ -21,6 +21,7 @@ const db = {
   barber: { findFirst: async () => ({ id: barberId, user: { name: 'Barbeiro', phone: '819997207222' } }) },
   service: { findMany: async () => [service()] },
   barberAvailability: { findMany: async () => windows },
+  barberScheduleBreak: { findMany: async () => [] },
   appointment: {
     findMany: async ({ where }) => busy.filter((item) => !where.id?.not || item.id !== where.id.not),
     findFirst: async ({ where }) => owned?.id === where.id && where.clientId === 'client' ? owned : null,
