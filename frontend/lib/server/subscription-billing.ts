@@ -3,6 +3,7 @@ import { Prisma, type PaymentMethod } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dateInputFromDate, isValidDateInput, startOfSaoPauloDay, todayDateInput } from "@/lib/server/date-periods";
 import { assertDueDay, dueDateInMonth, nextCycleDueDate } from "@/lib/server/subscription-calendar";
+import { isReviewedLegacyCancellation } from "@/lib/server/legacy-closed-contracts";
 
 const include = { subscriptionPlan: { include: { services: true } }, client: { select: { user: { select: { name: true } } } }, dueDayChanges: { where: { appliedAt: null }, orderBy: { createdAt: "asc" as const } } } as const;
 export type BillingSubscription = Prisma.SubscriptionGetPayload<{ include: typeof include }>;
@@ -22,7 +23,7 @@ export function projectSubscriptionBilling(subscription: BillingSubscription, ne
   const baseDay = subscription.baseDueDay ?? Number(dateInputFromDate(subscription.startDate).slice(8));
   const due = subscription.nextCycleDueDate ?? startOfSaoPauloDay(dateInputFromDate(subscription.endDate ?? subscription.startDate));
   if (subscription.baseDueDay === null && subscription.endDate && +dueDateInMonth(dateInputFromDate(due).slice(0, 7), baseDay) !== +due) {
-    throw new Error("Vencimento legado diverge da data-base armazenada. Reconcilie a data original e o ciclo antes de confirmar; nenhuma mensalidade sera inferida.");
+    throw new Error("Esta assinatura antiga precisa ter o vencimento operacional conciliado antes da renovacao. Nenhuma mensalidade sera inferida.");
   }
   const pending = subscription.dueDayChanges[0];
   const applicable = pending && +due >= +pending.afterDueDate;
@@ -58,8 +59,9 @@ export async function previewSubscriptionBilling(subscriptionId: string, userId:
 
 /** A new contract must not hide an old obligation or reset an unknown legacy anchor. */
 export async function assertNoClosedSubscriptionArrears(clientId: string, db: Prisma.TransactionClient = prisma) {
-  const previous = await db.subscription.findMany({ where: { clientId, deletedAt: null, status: { in: ["CANCELED", "EXPIRED"] } }, select: { billingFirstDueDate: true, nextCycleDueDate: true, endDate: true, status: true } });
+  const previous = await db.subscription.findMany({ where: { clientId, deletedAt: null, status: { in: ["CANCELED", "EXPIRED"] } } });
   for (const row of previous) {
+    if (await isReviewedLegacyCancellation(row, db)) continue;
     if (!row.billingFirstDueDate) throw new Error("Assinatura anterior legada exige revisao administrativa antes de abrir outro ciclo. Nenhuma divida foi presumida.");
     const cutoff = row.status === "CANCELED" && row.endDate ? row.endDate : new Date();
     if (row.nextCycleDueDate && row.nextCycleDueDate <= cutoff) throw new Error("Existe ciclo anterior pendente. Cancelar e recriar nao quita a obrigacao; solicite conciliacao administrativa.");

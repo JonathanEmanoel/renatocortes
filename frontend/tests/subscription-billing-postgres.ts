@@ -146,7 +146,7 @@ async function run() {
   assert.equal(Number((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: rollbackTransaction.id } })).amount), 20);
   check("Falha de auditoria reverte reclassificacao, comissao e receita por inteiro");
   const drift = await prisma.subscription.create({ data: { clientId: customer.client!.id, subscriptionPlanId: plan.id, startDate: start, endDate: new Date(+start + 14 * 86400000), active: true, status: 'ACTIVE' } });
-  await assert.rejects(previewSubscriptionBilling(drift.id, admin.id), /Vencimento legado diverge/);
+  await assert.rejects(previewSubscriptionBilling(drift.id, admin.id), /vencimento operacional conciliado/);
   assert.equal(await prisma.payment.count({ where: { subscriptionId: drift.id } }), 0);
   await prisma.subscription.delete({ where: { id: drift.id } });
   check("Legado com vencimento divergente bloqueado; nao inventa ciclo nem encurta dias pagos");
